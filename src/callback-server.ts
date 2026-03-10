@@ -65,7 +65,7 @@ export async function startCallbackServer(
  * Normalize the incoming payload into a flat shape.
  *
  * Two formats may arrive:
- *  1. 苍何服务云 raw: `{ messageType, wcId, data: { fromUser, content, newMsgId, ... } }`
+ *  1. upstream raw: `{ messageType, wcId, data: { fromUser, content, newMsgId, ... } }`
  *  2. Proxy flat:  `{ messageType, wcId, fromUser, content, newMsgId, contentType, raw, ... }`
  *
  * We detect the proxy format by checking whether `fromUser` exists at the top level.
@@ -100,7 +100,7 @@ function normalizePayload(payload: any): {
     };
   }
 
-  // 苍何服务云 raw format: fields nested under data
+  // Upstream raw format: fields nested under data
   const data = payload.data ?? {};
   return {
     messageType,

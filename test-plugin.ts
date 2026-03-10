@@ -1,5 +1,5 @@
 /**
- * 插件本地测试脚本 - 不依赖 OpenClaw 运行时
+ * 插件本地测试脚本 - 不依赖外部运行时
  */
 
 import { ProxyClient } from "./src/proxy-client.js";
@@ -98,7 +98,7 @@ async function testWebhookReceive() {
 
 // ===== 主测试流程 =====
 async function main() {
-  console.log("🚀 开始插件本地测试\n");
+  console.log("🚀 开始 Wechat-Claw 本地测试\n");
 
   // 测试 ProxyClient
   await testProxyClient();

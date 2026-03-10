@@ -11,11 +11,11 @@ import { displayQRCode, displayLoginSuccess } from "./utils/qrcode.js";
 
 const PLUGIN_META = {
   id: "wechat",
-  label: "WeChat",
-  selectionLabel: "WeChat (微信)",
+  label: "Wechat-Claw",
+  selectionLabel: "Wechat-Claw (微信)",
   docsPath: "/channels/wechat",
   docsLabel: "wechat",
-  blurb: "WeChat channel via Proxy API. 购买 API Key 请联系客服",
+  blurb: "Wechat-Claw by YutoAI. WeChat channel via Proxy API.",
   order: 80,
 } as const;
 
@@ -65,8 +65,7 @@ async function resolveWeChatAccount({
   if (!accountCfg?.apiKey) {
     throw new Error(
       `缺少 API Key。\n` +
-        `请联系客服购买 API Key\n` +
-        `然后配置: openclaw config set channels.wechat.apiKey "your-key"`
+        `请先提供可用凭证，然后配置: openclaw config set channels.wechat.apiKey "your-key"`
     );
   }
 
@@ -134,7 +133,7 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
 
   agentPrompt: {
     messageToolHints: () => [
-      "- WeChat targeting: use `user:<wcId>` for direct messages, `group:<chatRoomId>` for groups.",
+      "- Wechat-Claw targeting: use `user:<wcId>` for direct messages, `group:<chatRoomId>` for groups.",
       "- WeChat supports text, image, and file messages.",
     ],
   },

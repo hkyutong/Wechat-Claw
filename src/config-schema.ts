@@ -1,7 +1,7 @@
 /**
  * Configuration types for WeChat channel
  * 支持简化配置（顶级字段）和多账号配置（accounts）
- * Note: Zod is available from OpenClaw runtime for validation
+ * Note: runtime validation can be applied externally
  */
 
 export interface WechatAccountConfig {
@@ -37,7 +37,7 @@ export interface WechatConfig {
   accounts?: Record<string, WechatAccountConfig | undefined>;
 }
 
-// Schema object for OpenClaw config validation
+// Schema object for runtime config validation
 export const WechatConfigSchema = {
   type: "object" as const,
   additionalProperties: false,

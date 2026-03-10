@@ -1,11 +1,11 @@
 /**
- * 模拟 OpenClaw 环境测试 ChannelPlugin
+ * 模拟兼容运行时环境测试 ChannelPlugin
  */
 
 import { wechatPlugin } from "./src/channel.js";
 import type { ClawdbotConfig } from "openclaw/plugin-sdk";
 
-// ===== Mock OpenClaw 配置 =====
+// ===== Mock runtime 配置 =====
 const mockConfig: ClawdbotConfig = {
   channels: {
     wechat: {
@@ -24,7 +24,7 @@ const mockConfig: ClawdbotConfig = {
   },
 } as any;
 
-// ===== Mock OpenClaw API =====
+// ===== Mock runtime API =====
 const mockApi = {
   log: {
     info: (msg: string) => console.log(`[INFO] ${msg}`),
@@ -137,7 +137,7 @@ async function testOutbound() {
 // ===== 主测试流程 =====
 async function main() {
   console.log("=".repeat(60));
-  console.log("🧪 OpenClaw WeChat 插件本地测试");
+  console.log("🧪 Wechat-Claw 本地测试");
   console.log("=".repeat(60));
 
   try {
@@ -175,9 +175,9 @@ async function main() {
   console.log("=".repeat(60));
 
   console.log("\n💡 下一步:");
-  console.log("   1. 启动代理服务: cd openclaw-wechat-proxy && npm run dev");
+  console.log("   1. 启动代理服务: cd proxy-service && npm run dev");
   console.log("   2. 运行集成测试: npx tsx test-integration.ts");
-  console.log("   3. 或使用 OpenClaw 进行完整测试");
+  console.log("   3. 或使用兼容运行时进行完整测试");
 }
 
 main().catch(console.error);

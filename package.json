@@ -1,9 +1,10 @@
 {
-  "name": "@canghe/openclaw-wechat",
+  "name": "wechat-claw",
   "version": "0.1.0",
   "type": "module",
-  "description": "OpenClaw WeChat channel plugin via Proxy API",
+  "description": "Wechat-Claw by YutoAI: WeChat gateway plugin via Proxy API",
   "license": "MIT",
+  "author": "YutoAI",
   "files": [
     "index.ts",
     "src",
@@ -11,15 +12,15 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/woniu/openclaw-wechat.git"
+    "url": "git+https://github.com/YutoAI/Wechat-Claw.git"
   },
   "keywords": [
-    "openclaw",
+    "wechat-claw",
     "wechat",
     "微信",
-    "chatbot",
-    "ai",
-    "claude"
+    "gateway",
+    "plugin",
+    "yutoai"
   ],
   "openclaw": {
     "extensions": [
@@ -27,15 +28,15 @@
     ],
     "channel": {
       "id": "wechat",
-      "label": "WeChat",
-      "selectionLabel": "WeChat (微信)",
+      "label": "Wechat-Claw",
+      "selectionLabel": "Wechat-Claw (微信)",
       "docsPath": "/channels/wechat",
       "docsLabel": "wechat",
-      "blurb": "WeChat channel via Proxy API. 购买 API Key 请联系客服",
+      "blurb": "Wechat-Claw by YutoAI. WeChat channel via Proxy API.",
       "order": 80
     },
     "install": {
-      "npmSpec": "@canghe/openclaw-wechat",
+      "npmSpec": "wechat-claw",
       "localPath": ".",
       "defaultChoice": "npm"
     }

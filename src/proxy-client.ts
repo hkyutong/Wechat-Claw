@@ -170,7 +170,7 @@ export class ProxyClient {
 
   /**
    * Register plugin webhook URL with Proxy.
-   * Proxy will forward messages from 苍何服务云 to this URL.
+   * Proxy forwards upstream messages to this URL.
    */
   async registerWebhook(webhookUrl: string): Promise<void> {
     await this.request("/v1/webhook/register", {
