@@ -39,30 +39,42 @@ async function testWeChatPadProClient() {
       return jsonResponse({ message: "missing route" }, { status: 404 });
     }
 
-    if (url.includes("/api/login/GetLoginQrCodeNewX")) {
+    if (url.includes("/login/GetLoginQrCodeNewX")) {
       return jsonResponse({
-        code: 200,
-        success: true,
-        data: {
+        Code: 200,
+        Data: {
           uuid: "uuid-padpro",
-          qrcodeUrl: "https://login.weixin.qq.com/qrcode/padpro-demo",
+          QrLink: "http://weixin.qq.com/x/padpro-demo",
+          QrCodeUrl: "https://api.example.com/qrcode/padpro-demo",
         },
+        Text: "获取登录二维码成功",
       });
     }
 
     if (url.includes("/message/SendTextMessage")) {
       return jsonResponse({
-        code: 0,
-        data: {
+        Code: 0,
+        Data: {
           MsgId: 123456,
+        },
+      });
+    }
+
+    if (url.includes("/login/CheckLoginStatus")) {
+      return jsonResponse({
+        Code: 200,
+        Data: {
+          Status: "online",
+          wxid: "wxid_padpro",
+          nickname: "PadPro 用户",
         },
       });
     }
 
     if (url.includes("/webhook/Config")) {
       return jsonResponse({
-        code: 0,
-        data: {
+        Code: 200,
+        Data: {
           enabled: true,
         },
       });
@@ -70,8 +82,8 @@ async function testWeChatPadProClient() {
 
     if (url.includes("/user/GetProfile")) {
       return jsonResponse({
-        code: 0,
-        data: {
+        Code: 200,
+        Data: {
           wxid: "wxid_padpro",
           nickname: "PadPro 用户",
         },
@@ -104,7 +116,11 @@ async function testWeChatPadProClient() {
 
   const qr = await client.getQRCode("ipad");
   assert.equal(qr.wId, "uuid-padpro");
-  assert.equal(qr.qrCodeUrl, "https://login.weixin.qq.com/qrcode/padpro-demo");
+  assert.equal(qr.qrCodeUrl, "http://weixin.qq.com/x/padpro-demo");
+
+  const login = await client.checkLogin(qr.wId);
+  assert.equal(login.status, "logged_in");
+  assert.equal(login.wcId, "wxid_padpro");
 
   const sendResult = await client.sendText("wxid_target", "hello");
   assert.equal(sendResult.msgId, 123456);
@@ -112,8 +128,16 @@ async function testWeChatPadProClient() {
 
   await client.registerWebhook("wxid_padpro", "https://example.com/webhook/wechat?token=abc");
 
-  const qrFallbackCalls = fetchCalls.filter((call) => call.url.includes("/api/login/"));
-  assert.equal(qrFallbackCalls.length, 2, "应先尝试新路径，再回退旧路径");
+  const qrCalls = fetchCalls.filter((call) => call.url.includes("/login/"));
+  assert.equal(qrCalls.length, 3, "应先尝试兼容路径，并覆盖新版登录状态检查");
+  assert.ok(
+    qrCalls.some((call) => call.url.includes("/login/GetLoginQrCodeNewX")),
+    "应回退到新版真实二维码接口"
+  );
+  assert.ok(
+    qrCalls.some((call) => call.url.includes("/login/CheckLoginStatus?key=uuid-padpro")),
+    "应使用 uuid 查询新版登录状态"
+  );
 
   const sendCall = fetchCalls.find((call) => call.url.includes("/message/SendTextMessage"));
   assert.ok(sendCall, "应调用 SendTextMessage");
@@ -127,6 +151,7 @@ async function testWeChatPadProClient() {
       },
     ],
   });
+  assert.ok(sendCall!.url.includes("key=auth-demo"), "应通过 key 传递授权码");
 
   const webhookCall = fetchCalls.find((call) => call.url.includes("/webhook/Config"));
   assert.ok(webhookCall, "应调用 Webhook 配置接口");
@@ -139,6 +164,16 @@ async function testWeChatPadProClient() {
     retryCount: 5,
     messageTypes: ["1", "3"],
     includeSelfMessage: false,
+  });
+
+  const qrCall = fetchCalls.find((call) => call.url.includes("/login/GetLoginQrCodeNewX"));
+  assert.ok(qrCall, "应命中新版登录二维码路径");
+  const qrBody = JSON.parse(String(qrCall!.init?.body || "{}"));
+  assert.deepEqual(qrBody, {
+    Proxy: "socks5://127.0.0.1:7890",
+    proxy: "socks5://127.0.0.1:7890",
+    deviceName: "iPhone",
+    deviceId: "device-demo",
   });
 
   console.log("  ✓ WeChatPadPro 登录、发信和 Webhook 配置请求形状正确");

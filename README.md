@@ -91,6 +91,34 @@ openclaw config set channels.wechat.webhookPort 18792
 - `proxyUrl`: 你的微信代理服务地址
 - `webhookHost`: 代理服务能够回调到的公网 IP、域名，或完整 `https://` 地址
 
+### WeChatPadPro 推荐配置
+
+如果你用的是 `WeChatPadPro`，建议明确写 provider，不要继续沿用旧的通用示例：
+
+```bash
+openclaw config set channels.wechat.enabled true
+openclaw config set channels.wechat.provider "wechatpadpro"
+openclaw config set channels.wechat.apiKey "your-auth-key"
+openclaw config set channels.wechat.proxyUrl "http://127.0.0.1:1238"
+openclaw config set channels.wechat.deviceType "ipad"
+openclaw config set channels.wechat.webhookHost "https://your-domain.example.com"
+openclaw config set channels.wechat.webhookPort 18792
+```
+
+注意：
+
+- `apiKey` 这里要填 `WeChatPadPro` 业务 `AuthKey`，不是 `ADMIN_KEY`
+- 默认 API 端口通常是 `1238`，不是旧文档里常见的 `13800`
+- `WeChatPadPro` 新版接口会返回 `QrLink` 和 `QrCodeUrl`，插件会优先使用可直接扫码的 `QrLink`
+- 首次登录或长期离线后重新登录，风控概率会升高，这不是插件能彻底消除的
+
+为了尽量稳定，建议同时满足这几点：
+
+- 固定一条长期稳定、同城的代理线路，不要频繁切换出口 IP
+- 不要在短时间内重复获取二维码、重复登录、重复登出
+- 同一个微信号只接入一套协议链路，避免和其他 Pad/PC 组件混用
+- 保持服务长期在线，避免账号频繁离线后再重新拉起
+
 ### 4. 启动网关
 
 ```bash

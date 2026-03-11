@@ -22,11 +22,17 @@ type RequestOptions = {
 
 type WeChatPadProResult = {
   code?: number;
+  Code?: number;
   success?: boolean;
+  Success?: boolean;
   message?: string;
+  Message?: string;
   msg?: string;
+  Msg?: string;
   text?: string;
+  Text?: string;
   data?: any;
+  Data?: any;
   [key: string]: any;
 };
 
@@ -119,6 +125,9 @@ export class ProxyClient {
 
   private extractWeChatPadProMessage(result: WeChatPadProResult | null | undefined, response?: Response): string {
     return (
+      result?.Text ||
+      result?.Message ||
+      result?.Msg ||
       result?.message ||
       result?.msg ||
       result?.text ||
@@ -126,11 +135,31 @@ export class ProxyClient {
     );
   }
 
+  private getWeChatPadProCode(result: WeChatPadProResult | null | undefined): number | undefined {
+    if (!result) {
+      return undefined;
+    }
+    return typeof result.code === "number"
+      ? result.code
+      : typeof result.Code === "number"
+        ? result.Code
+        : undefined;
+  }
+
+  private getWeChatPadProData(result: WeChatPadProResult | null | undefined): any {
+    if (!result) {
+      return undefined;
+    }
+    return result.data ?? result.Data;
+  }
+
   private isWeChatPadProSuccess(result: WeChatPadProResult | null | undefined): boolean {
     if (!result) return false;
-    if (result.success === true) return true;
-    if (result.code === 0 || result.code === 200) return true;
-    if (result.code === undefined && result.data !== undefined) return true;
+    const code = this.getWeChatPadProCode(result);
+    const data = this.getWeChatPadProData(result);
+    if (result.success === true || result.Success === true) return true;
+    if (code === 0 || code === 200) return true;
+    if (code === undefined && data !== undefined) return true;
     return false;
   }
 
@@ -173,7 +202,7 @@ export class ProxyClient {
   ): Promise<any> {
     const result = await this.requestWeChatPadProRaw(endpoints, options);
     if (this.isWeChatPadProSuccess(result)) {
-      return result.data ?? result;
+      return this.getWeChatPadProData(result) ?? result;
     }
     throw new Error(this.extractWeChatPadProMessage(result));
   }
@@ -203,7 +232,25 @@ export class ProxyClient {
   }
 
   private isLikelyWeChatPadProNotLoggedIn(message: string): boolean {
-    return /未登录|离线|offline|not\s*login|不存在状态|未初始化/i.test(message);
+    return /未登录|离线|offline|not\s*login|no\s*login|不存在状态|未初始化|重新登录/i.test(message);
+  }
+
+  private pickWeChatPadProLoginUrl(data: any): string | undefined {
+    return (
+      data?.QrLink ||
+      data?.qrLink ||
+      data?.qrCodeLink ||
+      data?.QrCodeLink ||
+      data?.qrcodeUrl ||
+      data?.qrCodeUrl ||
+      data?.QrCodeUrl ||
+      data?.qrcode ||
+      data?.qr ||
+      data?.QrBase64 ||
+      data?.qrCodeBase64 ||
+      data?.QrCodeBase64 ||
+      data?.QrBase64Data
+    );
   }
 
   // ===== 账号状态 =====
@@ -286,7 +333,7 @@ export class ProxyClient {
 
     if (selectedDeviceType === "mac") {
       const result = await this.requestWeChatPadProRaw(
-        ["/api/Login/GetQRMac", "/api/login/GetQRMac", "/Login/GetQRMac"],
+        ["/login/GetLoginQrCodeMac", "/api/Login/GetQRMac", "/api/login/GetQRMac", "/Login/GetQRMac"],
         {
           method: "GET",
           query: {
@@ -301,13 +348,8 @@ export class ProxyClient {
         throw new Error(this.extractWeChatPadProMessage(result));
       }
 
-      const data = result.data ?? result;
-      const qrCodeUrl =
-        data?.qrcodeUrl ||
-        data?.qrcode ||
-        data?.qr ||
-        data?.QrBase64 ||
-        data?.QrBase64Data;
+      const data = this.getWeChatPadProData(result) ?? result;
+      const qrCodeUrl = this.pickWeChatPadProLoginUrl(data);
       const uuid = data?.uuid || data?.UUID || data?.key || data?.sessionId || data?.wid || this.apiKey;
       if (!qrCodeUrl || !uuid) {
         throw new Error("WeChatPadPro Mac 登录二维码响应缺少必要字段。");
@@ -320,7 +362,7 @@ export class ProxyClient {
     }
 
     const result = await this.requestWeChatPadProRaw(
-      ["/api/login/qr/newx", "/api/login/GetLoginQrCodeNewX", "/api/login/qr/new"],
+      ["/api/login/qr/newx", "/login/GetLoginQrCodeNewX", "/api/login/GetLoginQrCodeNewX", "/login/GetLoginQrCodeNew", "/api/login/qr/new"],
       {
         method: "POST",
         query: {
@@ -331,6 +373,7 @@ export class ProxyClient {
           "Content-Type": "application/json",
         }),
         body: {
+          Proxy: this.loginProxyUrl || proxy || undefined,
           proxy: this.loginProxyUrl || proxy || undefined,
           deviceName: this.deviceName,
           deviceId: this.deviceId,
@@ -342,8 +385,8 @@ export class ProxyClient {
       throw new Error(this.extractWeChatPadProMessage(result));
     }
 
-    const data = result.data ?? result;
-    const qrCodeUrl = data?.qrcodeUrl || data?.qrcode || data?.qr;
+    const data = this.getWeChatPadProData(result) ?? result;
+    const qrCodeUrl = this.pickWeChatPadProLoginUrl(data);
     const uuid = data?.uuid || data?.UUID || data?.key || data?.wid;
     if (!qrCodeUrl || !uuid) {
       throw new Error("WeChatPadPro 登录二维码响应缺少必要字段。");
@@ -380,8 +423,8 @@ export class ProxyClient {
 
     const selectedDeviceType = this.deviceType || "ipad";
     const endpoints = selectedDeviceType === "mac"
-      ? ["/api/Login/CheckMacQR", "/api/login/CheckMacQR", "/Login/CheckMacQR"]
-      : ["/api/login/CheckLoginStatus", "/api/login/status"];
+      ? ["/login/CheckMacQR", "/api/Login/CheckMacQR", "/api/login/CheckMacQR", "/Login/CheckMacQR"]
+      : ["/login/CheckLoginStatus", "/api/login/CheckLoginStatus", "/login/GetLoginStatus", "/api/login/status"];
 
     const result = await this.requestWeChatPadProRaw(endpoints, {
       method: "GET",
@@ -397,14 +440,18 @@ export class ProxyClient {
       headers: this.buildWeChatPadProHeaders(),
     });
 
-    const code = typeof result.code === "number" ? result.code : undefined;
-    const data = result.data ?? result;
+    const code = this.getWeChatPadProCode(result);
+    const data = this.getWeChatPadProData(result) ?? result;
     const normalized = this.normalizeWeChatPadProProfile(data?.userInfo || data);
     const rawStatus = String(
       data?.status ||
       data?.state ||
+      data?.Status ||
+      data?.State ||
       result.status ||
       result.state ||
+      result.Status ||
+      result.State ||
       ""
     ).toLowerCase();
 
@@ -603,7 +650,7 @@ export class ProxyClient {
       }
     );
 
-    if (!(result.code === 0 || result.code === 200 || result.success === true)) {
+    if (!this.isWeChatPadProSuccess(result)) {
       throw new Error(this.extractWeChatPadProMessage(result));
     }
   }
