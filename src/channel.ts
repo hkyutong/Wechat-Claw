@@ -8,6 +8,28 @@ import { handleWeChatMessage } from "./bot.js";
 import { displayQRCode, displayLoginSuccess } from "./utils/qrcode.js";
 import { attachWebhookAuthToken, buildWebhookAuthToken, buildWebhookSecret } from "./webhook-auth.js";
 import { buildWebhookBaseUrl } from "./webhook-url.js";
+import { sendWithOutboundControl } from "./outbound-control.js";
+import {
+  clearPendingLoginState,
+  getLastQrIssuedAt,
+  getPendingLoginState,
+  getStartupCircuitState,
+  hydrateAccountFromPersistentState,
+  markPendingLoginRendered,
+  markPendingLoginVerifyUrl,
+  recordLoggedOutState,
+  recordLoginSuccessState,
+  recordPendingLoginState,
+  recordStartupFailureState,
+  recordStartupSuccessState,
+} from "./account-state.js";
+import {
+  computeQrThrottleDelayMs,
+  computeExponentialBackoffMs,
+  resolveStabilityProfile,
+  shouldRenderQRCodeAgain,
+  sleepWithAbort,
+} from "./stability.js";
 
 // 代理服务地址（必须配置）
 // openclaw config set channels.wechat.proxyUrl "http://你的代理服务:13800"
@@ -21,6 +43,8 @@ const PLUGIN_META = {
   blurb: "OpenClaw 微信通道插件，通过 Proxy API 接入微信账号。",
   order: 80,
 } as const;
+const displayedLoginSessions = new Map<string, string>();
+const activeAccountLifecycles = new Map<string, { requestStop: () => void }>();
 
 function pickSharedAccountConfig(source?: WechatConfig | WechatAccountConfig): Partial<WechatAccountConfig> {
   if (!source) {
@@ -190,7 +214,7 @@ function resolveWeChatAccount({
     );
   }
 
-  return {
+  const resolved: ResolvedWeChatAccount = {
     accountId,
     enabled,
     configured: true,
@@ -217,6 +241,9 @@ function resolveWeChatAccount({
     webhookTimestampSkewSec: accountCfg.webhookTimestampSkewSec || 300,
     config: accountCfg,
   };
+
+  hydrateAccountFromPersistentState(resolved, resolveStabilityProfile(resolved));
+  return resolved;
 }
 
 /**
@@ -286,12 +313,134 @@ function createAccountClient(account: ResolvedWeChatAccount): ProxyClient {
   });
 }
 
-function applyResolvedIdentity(account: ResolvedWeChatAccount, wcId: string, nickName?: string): void {
+function applyResolvedIdentity(
+  account: ResolvedWeChatAccount,
+  wcId: string,
+  nickName?: string,
+  headUrl?: string
+): void {
   account.wcId = wcId;
   account.nickName = nickName;
+  account.headUrl = headUrl;
   account.isLoggedIn = true;
   account.config.wcId = wcId;
   account.config.nickName = nickName;
+}
+
+function computeStartupWaitMs(account: ResolvedWeChatAccount, reason: string): number {
+  const profile = resolveStabilityProfile(account);
+  const nextState = recordStartupFailureState(account, profile, reason);
+  if (nextState.circuitOpenUntil && nextState.circuitOpenUntil > Date.now()) {
+    return nextState.circuitOpenUntil - Date.now();
+  }
+  return computeExponentialBackoffMs(
+    nextState.consecutiveFailures,
+    profile.startupBaseBackoffMs,
+    profile.startupMaxBackoffMs
+  );
+}
+
+function isAbortLikeError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /流程已中止|登录流程已中止|aborted|abort/i.test(message);
+}
+
+async function ensureQRCodeSession(params: {
+  account: ResolvedWeChatAccount;
+  client: ProxyClient;
+  abortSignal?: AbortSignal;
+  log?: { info?: (message: string) => void; warn?: (message: string) => void };
+}): Promise<{ wId: string; qrCodeUrl: string; expiresAt: number }> {
+  const { account, client, abortSignal, log } = params;
+  const profile = resolveStabilityProfile(account);
+  const now = Date.now();
+  const pendingLogin = getPendingLoginState(account, profile);
+
+  if (pendingLogin) {
+    if (shouldRenderQRCodeAgain({
+      lastRenderedSessionId: displayedLoginSessions.get(account.accountId),
+      currentSessionId: pendingLogin.wId,
+      lastRenderedAt: pendingLogin.lastRenderedAt,
+      displayThrottleMs: profile.qrDisplayThrottleMs,
+      now,
+    })) {
+      log?.info?.("复用现有二维码登录会话");
+      await displayQRCode(pendingLogin.qrCodeUrl);
+      markPendingLoginRendered(account, profile, now);
+      displayedLoginSessions.set(account.accountId, pendingLogin.wId);
+    } else {
+      log?.info?.("沿用仍在有效期内的二维码登录会话");
+    }
+
+    return {
+      wId: pendingLogin.wId,
+      qrCodeUrl: pendingLogin.qrCodeUrl,
+      expiresAt: pendingLogin.expiresAt,
+    };
+  }
+
+  const qrThrottleDelayMs = computeQrThrottleDelayMs(getLastQrIssuedAt(account, profile), profile.qrThrottleMs, now);
+  if (qrThrottleDelayMs > 0) {
+    log?.info?.(`二维码节流生效，${Math.ceil(qrThrottleDelayMs / 1000)} 秒后再申请新码`);
+    await sleepWithAbort(qrThrottleDelayMs, abortSignal);
+  }
+
+  const qr = await client.getQRCode(
+    account.deviceType,
+    account.provider === "wechatpadpro" ? account.loginProxyUrl : account.proxy
+  );
+  const issuedAt = Date.now();
+
+  const session = {
+    wId: qr.wId,
+    qrCodeUrl: qr.qrCodeUrl,
+    expiresAt: issuedAt + profile.loginTimeoutMs,
+  };
+
+  recordPendingLoginState(account, profile, {
+    ...session,
+    issuedAt,
+    lastRenderedAt: issuedAt,
+  });
+  await displayQRCode(qr.qrCodeUrl);
+  displayedLoginSessions.set(account.accountId, qr.wId);
+  return session;
+}
+
+async function completeLoginFlow(params: {
+  account: ResolvedWeChatAccount;
+  client: ProxyClient;
+  abortSignal?: AbortSignal;
+  log?: { info?: (message: string) => void; warn?: (message: string) => void };
+}): Promise<{ wcId: string; nickName: string; headUrl?: string } | null> {
+  const { account, client, abortSignal, log } = params;
+  const profile = resolveStabilityProfile(account);
+  const qrSession = await ensureQRCodeSession({ account, client, abortSignal, log });
+
+  while (Date.now() < qrSession.expiresAt) {
+    if (abortSignal?.aborted) {
+      throw new Error("登录流程已中止");
+    }
+
+    await sleepWithAbort(profile.loginPollIntervalMs, abortSignal);
+    const check = await client.checkLogin(qrSession.wId);
+
+    if (check.status === "logged_in") {
+      clearPendingLoginState(account, profile);
+      displayedLoginSessions.delete(account.accountId);
+      return check;
+    }
+
+    if (check.status === "need_verify") {
+      log?.warn?.(`需要辅助验证: ${check.verifyUrl}`);
+      console.log(`\n⚠️  需要辅助验证，请访问: ${check.verifyUrl}\n`);
+      markPendingLoginVerifyUrl(account, profile, check.verifyUrl);
+    }
+  }
+
+  clearPendingLoginState(account, profile);
+  displayedLoginSessions.delete(account.accountId);
+  return null;
 }
 
 function resolveAllowEntries(account: ResolvedWeChatAccount): string[] {
@@ -616,148 +765,256 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
     startAccount: async (ctx) => {
       const { cfg, accountId, abortSignal, setStatus, log } = ctx;
       const account = await resolveWeChatAccount({ cfg, accountId });
+      const profile = resolveStabilityProfile(account);
+      let stopCallbackServer: (() => void) | null = null;
+      let stopping = false;
+
+      const stopRunningServer = () => {
+        if (!stopCallbackServer) {
+          return;
+        }
+        stopCallbackServer();
+        stopCallbackServer = null;
+      };
+
+      activeAccountLifecycles.get(accountId)?.requestStop();
+      const requestStop = () => {
+        stopping = true;
+        stopRunningServer();
+      };
+      activeAccountLifecycles.set(accountId, { requestStop });
+      abortSignal?.addEventListener("abort", requestStop, { once: true });
 
       log?.info(`启动 OpenClaw 微信账号: ${accountId}`);
       log?.info(`后端提供方: ${account.provider}`);
       log?.info(`代理地址: ${account.proxyUrl}`);
-
-      const client = createAccountClient(account);
-
-      // 先检查当前登录状态。
-      const status = await client.getStatus();
-
-      if (!status.valid) {
-        throw new Error(`API Key 无效: ${status.error || "未知错误"}`);
+      if (profile.stateFile) {
+        log?.info(`持久化状态文件: ${profile.stateFile}`);
       }
 
-      // 未登录时走二维码登录流程。
-      if (!status.isLoggedIn) {
-        log?.info("当前未登录，开始二维码登录流程");
+      let statusProbeFailures = 0;
 
-        const { qrCodeUrl, wId } = await client.getQRCode(
-          account.deviceType,
-          account.provider === "wechatpadpro" ? account.loginProxyUrl : account.proxy
-        );
-
-        await displayQRCode(qrCodeUrl);
-
-        // 轮询登录结果。
-        let loggedIn = false;
-        let loginResult: { wcId: string; nickName: string; headUrl?: string } | null = null;
-
-        for (let i = 0; i < 60; i++) {
-          if (abortSignal?.aborted) {
-            throw new Error("登录流程已中止");
+      while (!stopping && !abortSignal?.aborted) {
+        try {
+          const startupState = getStartupCircuitState(account, profile);
+          if (startupState.circuitOpenUntil && startupState.circuitOpenUntil > Date.now()) {
+            const remainingMs = startupState.circuitOpenUntil - Date.now();
+            const remainingSec = Math.ceil(remainingMs / 1000);
+            log?.warn(`登录熔断已开启，${remainingSec} 秒后再尝试拉起账号 ${accountId}`);
+            setStatus({
+              accountId,
+              running: false,
+              port: null,
+              lastError: `登录熔断中，${remainingSec} 秒后重试`,
+            });
+            await sleepWithAbort(remainingMs, abortSignal);
           }
 
-          await new Promise((r) => setTimeout(r, 5000));
+          const client = createAccountClient(account);
+          const status = await client.getStatus();
 
-          const check = await client.checkLogin(wId);
-
-          if (check.status === "logged_in") {
-            loggedIn = true;
-            loginResult = check;
-            break;
-          } else if (check.status === "need_verify") {
-            log?.warn(`需要辅助验证: ${check.verifyUrl}`);
-            console.log(`\n⚠️  需要辅助验证，请访问: ${check.verifyUrl}\n`);
+          if (!status.valid) {
+            throw new Error(`API Key 无效: ${status.error || "未知错误"}`);
           }
-        }
 
-        if (!loggedIn || !loginResult) {
-          throw new Error("登录超时：二维码已过期");
-        }
+          if (!status.isLoggedIn || !status.wcId) {
+            log?.info("当前未登录，开始二维码登录流程");
+            const loginResult = await completeLoginFlow({
+              account,
+              client,
+              abortSignal,
+              log,
+            });
 
-        displayLoginSuccess(loginResult.nickName, loginResult.wcId);
-
-        // 这里只更新内存态，持久化由外层运行时负责。
-        log?.info(`登录成功: ${loginResult.nickName} (${loginResult.wcId})`);
-
-        // 更新当前账号的内存态。
-        applyResolvedIdentity(account, loginResult.wcId, loginResult.nickName);
-      } else {
-        log?.info(`已登录: ${status.nickName} (${status.wcId})`);
-        applyResolvedIdentity(account, status.wcId!, status.nickName);
-      }
-
-      // 启动回调服务接收消息。
-      const port = account.webhookPort;
-      setStatus({ accountId, port, running: true });
-
-      // 生成代理服务回调地址。
-      let webhookHost: string;
-
-      if (account.webhookHost) {
-        // 优先使用显式配置的公网地址。
-        webhookHost = account.webhookHost;
-      } else {
-        // 云服务器场景下自动探测本机 IPv4。
-        const { networkInterfaces } = await import("os");
-        const nets = networkInterfaces();
-        let localIp = "localhost";
-        for (const name of Object.keys(nets)) {
-          for (const net of nets[name] || []) {
-            if (net.family === "IPv4" && !net.internal) {
-              localIp = net.address;
-              break;
+            if (!loginResult) {
+              const reason = "登录超时：二维码已过期";
+              const waitMs = computeStartupWaitMs(account, reason);
+              setStatus({
+                accountId,
+                running: false,
+                port: null,
+                lastError: reason,
+              });
+              log?.warn(`${reason}，${Math.ceil(waitMs / 1000)} 秒后重试`);
+              await sleepWithAbort(waitMs, abortSignal);
+              continue;
             }
+
+            displayLoginSuccess(loginResult.nickName, loginResult.wcId);
+            log?.info(`登录成功: ${loginResult.nickName} (${loginResult.wcId})`);
+            applyResolvedIdentity(account, loginResult.wcId, loginResult.nickName, loginResult.headUrl);
+            recordLoginSuccessState(account, profile, loginResult);
+          } else {
+            log?.info(`已登录: ${status.nickName} (${status.wcId})`);
+            applyResolvedIdentity(account, status.wcId, status.nickName);
+            recordLoginSuccessState(account, profile, {
+              wcId: status.wcId,
+              nickName: status.nickName,
+            });
+            displayedLoginSessions.delete(account.accountId);
           }
-          if (localIp !== "localhost") break;
-        }
-        webhookHost = localIp;
-        log?.warn(`webhookHost 未配置，使用自动检测的 IP: ${localIp}`);
-        log?.warn(`建议配置: openclaw config set channels.wechat.webhookHost "你的公网 IP、域名，或 https://你的域名"`);
-      }
 
-      const webhookBaseUrl = buildWebhookBaseUrl({
-        webhookHost,
-        webhookPort: port,
-        webhookPath: account.webhookPath,
-      });
-      const webhookAuthToken = buildWebhookAuthToken(account.accountId, account.apiKey);
-      const webhookSecret = account.webhookSecret || buildWebhookSecret(account.accountId, account.apiKey);
-      const webhookUrl = attachWebhookAuthToken(webhookBaseUrl, webhookAuthToken);
-      log?.info(`使用 webhook 地址: ${webhookBaseUrl}`);
-      log?.info("Webhook 派生鉴权已启用");
-      if (account.provider === "wechatpadpro") {
-        log?.info("WeChatPadPro Webhook HMAC 验签已启用");
-      }
-
-      // 向代理服务注册 webhook。
-      log?.info(`向代理服务注册 webhook，wcId=${account.wcId}`);
-      await client.registerWebhook(account.wcId!, webhookUrl);
-
-      const { stop } = await startCallbackServer({
-        port,
-        path: account.webhookPath,
-        provider: account.provider,
-        authToken: webhookAuthToken,
-        signatureSecret: account.provider === "wechatpadpro" ? webhookSecret : undefined,
-        timestampSkewSec: account.webhookTimestampSkewSec,
-        onMessage: (message) => {
-          handleWeChatMessage({
-            cfg,
-            message,
-            runtime: ctx.runtime,
-            accountId,
-            account,
-          }).catch((err) => {
-            log?.error(`处理微信消息失败: ${String(err)}`);
-          });
-        },
-        abortSignal,
-      });
-
-      log?.info(`OpenClaw 微信账号 ${accountId} 已启动，监听端口 ${port}`);
-      log?.info(`Webhook 地址: ${webhookBaseUrl}`);
-
-      // 返回停止句柄，供运行时收尾。
-      return {
-        async stop() {
-          stop();
+          const port = account.webhookPort;
           setStatus({ accountId, port, running: false });
-        },
-      };
+
+          let webhookHost: string;
+          if (account.webhookHost) {
+            webhookHost = account.webhookHost;
+          } else {
+            const { networkInterfaces } = await import("os");
+            const nets = networkInterfaces();
+            let localIp = "localhost";
+            for (const name of Object.keys(nets)) {
+              for (const net of nets[name] || []) {
+                if (net.family === "IPv4" && !net.internal) {
+                  localIp = net.address;
+                  break;
+                }
+              }
+              if (localIp !== "localhost") break;
+            }
+            webhookHost = localIp;
+            log?.warn(`webhookHost 未配置，使用自动检测的 IP: ${localIp}`);
+            log?.warn(`建议配置: openclaw config set channels.wechat.webhookHost "你的公网 IP、域名，或 https://你的域名"`);
+          }
+
+          const webhookBaseUrl = buildWebhookBaseUrl({
+            webhookHost,
+            webhookPort: port,
+            webhookPath: account.webhookPath,
+          });
+          const webhookAuthToken = buildWebhookAuthToken(account.accountId, account.apiKey);
+          const webhookSecret = account.webhookSecret || buildWebhookSecret(account.accountId, account.apiKey);
+          const webhookUrl = attachWebhookAuthToken(webhookBaseUrl, webhookAuthToken);
+
+          log?.info(`使用 webhook 地址: ${webhookBaseUrl}`);
+          log?.info("Webhook 派生鉴权已启用");
+          if (account.provider === "wechatpadpro") {
+            log?.info("WeChatPadPro Webhook HMAC 验签已启用");
+          }
+
+          log?.info(`向代理服务注册 webhook，wcId=${account.wcId}`);
+          await client.registerWebhook(account.wcId!, webhookUrl);
+
+          stopRunningServer();
+          const { stop } = await startCallbackServer({
+            port,
+            path: account.webhookPath,
+            provider: account.provider,
+            authToken: webhookAuthToken,
+            signatureSecret: account.provider === "wechatpadpro" ? webhookSecret : undefined,
+            timestampSkewSec: account.webhookTimestampSkewSec,
+            onMessage: (message) => {
+              handleWeChatMessage({
+                cfg,
+                message,
+                runtime: ctx.runtime,
+                accountId,
+                account,
+              }).catch((err) => {
+                log?.error(`处理微信消息失败: ${String(err)}`);
+              });
+            },
+            abortSignal,
+          });
+
+          stopCallbackServer = stop;
+          recordStartupSuccessState(account, profile);
+          statusProbeFailures = 0;
+          setStatus({
+            accountId,
+            port,
+            running: true,
+            lastError: null,
+            lastStartAt: Date.now(),
+          });
+          log?.info(`OpenClaw 微信账号 ${accountId} 已启动，监听端口 ${port}`);
+          log?.info(`Webhook 地址: ${webhookBaseUrl}`);
+
+          while (!stopping && !abortSignal?.aborted) {
+            await sleepWithAbort(profile.statusProbeIntervalMs, abortSignal);
+
+            try {
+              const nextStatus = await client.getStatus();
+              if (nextStatus.valid && nextStatus.isLoggedIn && nextStatus.wcId) {
+                applyResolvedIdentity(account, nextStatus.wcId, nextStatus.nickName);
+                recordLoginSuccessState(account, profile, {
+                  wcId: nextStatus.wcId,
+                  nickName: nextStatus.nickName,
+                });
+                statusProbeFailures = 0;
+                continue;
+              }
+
+              statusProbeFailures += 1;
+              log?.warn(`账号 ${accountId} 状态探测异常 (${statusProbeFailures}/${profile.statusProbeFailureThreshold})`);
+            } catch (error: any) {
+              statusProbeFailures += 1;
+              log?.warn(`账号 ${accountId} 状态探测失败 (${statusProbeFailures}/${profile.statusProbeFailureThreshold}): ${error.message}`);
+            }
+
+            if (statusProbeFailures < profile.statusProbeFailureThreshold) {
+              continue;
+            }
+
+            const reason = "状态探测发现离线或代理不可用";
+            recordLoggedOutState(account, profile, reason);
+            stopRunningServer();
+            setStatus({
+              accountId,
+              running: false,
+              port: null,
+              lastError: reason,
+              lastStopAt: Date.now(),
+            });
+            const waitMs = computeStartupWaitMs(account, reason);
+            log?.warn(`${reason}，${Math.ceil(waitMs / 1000)} 秒后重试`);
+            await sleepWithAbort(waitMs, abortSignal);
+            break;
+          }
+        } catch (error: any) {
+          stopRunningServer();
+
+          if (stopping || abortSignal?.aborted || isAbortLikeError(error)) {
+            break;
+          }
+
+          const reason = error?.message || String(error);
+          recordLoggedOutState(account, profile, reason);
+          setStatus({
+            accountId,
+            running: false,
+            port: null,
+            lastError: reason,
+            lastStopAt: Date.now(),
+          });
+          const waitMs = computeStartupWaitMs(account, reason);
+          log?.error(`微信账号 ${accountId} 启动失败: ${reason}`);
+          log?.warn(`${Math.ceil(waitMs / 1000)} 秒后重试账号 ${accountId}`);
+          await sleepWithAbort(waitMs, abortSignal).catch(() => undefined);
+        }
+      }
+
+      stopRunningServer();
+      activeAccountLifecycles.delete(accountId);
+      displayedLoginSessions.delete(account.accountId);
+      setStatus({
+        accountId,
+        running: false,
+        port: null,
+        lastStopAt: Date.now(),
+      });
+    },
+
+    stopAccount: async ({ accountId, setStatus }) => {
+      activeAccountLifecycles.get(accountId)?.requestStop();
+      displayedLoginSessions.delete(accountId);
+      setStatus({
+        accountId,
+        running: false,
+        port: null,
+        lastStopAt: Date.now(),
+      });
     },
   },
 
@@ -770,12 +1027,15 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
         throw new Error("当前账号尚未登录");
       }
 
-      const result = await client.sendText(to.id, text);
+      const controlled = await sendWithOutboundControl({
+        account,
+        send: () => client.sendText(to.id, text),
+      });
 
       return {
         channel: "wechat",
-        messageId: String(result.newMsgId),
-        timestamp: result.createTime,
+        messageId: String(controlled.newMsgId),
+        timestamp: controlled.createTime,
       };
     },
 
@@ -789,14 +1049,20 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
 
       // 发送媒体前先补发文字说明。
       if (text?.trim()) {
-        await client.sendText(to.id, text);
+        await sendWithOutboundControl({
+          account,
+          send: () => client.sendText(to.id, text),
+        });
       }
 
       if (!looksLikeImageUrl(mediaUrl)) {
         const fallbackText = [text?.trim(), `媒体链接: ${mediaUrl}`]
           .filter(Boolean)
           .join("\n");
-        const result = await client.sendText(to.id, fallbackText);
+        const result = await sendWithOutboundControl({
+          account,
+          send: () => client.sendText(to.id, fallbackText),
+        });
         return {
           channel: "wechat",
           messageId: String(result.newMsgId),
@@ -805,7 +1071,10 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
       }
 
       // 再发送图片主体。
-      const result = await client.sendImage(to.id, mediaUrl);
+      const result = await sendWithOutboundControl({
+        account,
+        send: () => client.sendImage(to.id, mediaUrl),
+      });
 
       return {
         channel: "wechat",

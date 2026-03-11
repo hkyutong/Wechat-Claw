@@ -69,6 +69,23 @@ export interface WechatRiskControl {
 
 export interface WechatOperationsPolicy {
   enableBuiltinCommands?: boolean;
+  qrThrottleMs?: number;
+  qrDisplayThrottleMs?: number;
+  loginPollIntervalMs?: number;
+  loginTimeoutMs?: number;
+  startupBaseBackoffMs?: number;
+  startupMaxBackoffMs?: number;
+  startupCircuitBreakerThreshold?: number;
+  startupCircuitOpenMs?: number;
+  outboundMinIntervalMs?: number;
+  outboundRetryCount?: number;
+  outboundRetryDelayMs?: number;
+  outboundMaxRetryDelayMs?: number;
+  outboundCircuitBreakerThreshold?: number;
+  outboundCircuitOpenMs?: number;
+  statusProbeIntervalMs?: number;
+  statusProbeFailureThreshold?: number;
+  stateFile?: string;
 }
 
 export interface WechatSharedConfig {
@@ -254,6 +271,23 @@ const operationsPolicySchema = {
   additionalProperties: false,
   properties: {
     enableBuiltinCommands: { type: "boolean" },
+    qrThrottleMs: { type: "integer", minimum: 0 },
+    qrDisplayThrottleMs: { type: "integer", minimum: 0 },
+    loginPollIntervalMs: { type: "integer", minimum: 1000 },
+    loginTimeoutMs: { type: "integer", minimum: 10_000 },
+    startupBaseBackoffMs: { type: "integer", minimum: 1000 },
+    startupMaxBackoffMs: { type: "integer", minimum: 1000 },
+    startupCircuitBreakerThreshold: { type: "integer", minimum: 1 },
+    startupCircuitOpenMs: { type: "integer", minimum: 1000 },
+    outboundMinIntervalMs: { type: "integer", minimum: 0 },
+    outboundRetryCount: { type: "integer", minimum: 1 },
+    outboundRetryDelayMs: { type: "integer", minimum: 0 },
+    outboundMaxRetryDelayMs: { type: "integer", minimum: 0 },
+    outboundCircuitBreakerThreshold: { type: "integer", minimum: 1 },
+    outboundCircuitOpenMs: { type: "integer", minimum: 1000 },
+    statusProbeIntervalMs: { type: "integer", minimum: 5000 },
+    statusProbeFailureThreshold: { type: "integer", minimum: 1 },
+    stateFile: { type: "string" },
   },
 };
 

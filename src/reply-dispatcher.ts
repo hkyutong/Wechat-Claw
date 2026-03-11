@@ -7,11 +7,14 @@ import { createReplyPrefixContext } from "openclaw/plugin-sdk";
 import { getWeChatRuntime } from "./runtime.js";
 import { ProxyClient } from "./proxy-client.js";
 import type { WechatProvider } from "./types.js";
+import { sendWithOutboundControl } from "./outbound-control.js";
+import type { ResolvedWeChatAccount } from "./types.js";
 
 export type CreateWeChatReplyDispatcherParams = {
   cfg: ClawdbotConfig;
   agentId: string;
   runtime: RuntimeEnv;
+  account: ResolvedWeChatAccount;
   provider?: WechatProvider;
   apiKey: string;
   proxyUrl: string;
@@ -23,7 +26,7 @@ export type CreateWeChatReplyDispatcherParams = {
 
 export function createWeChatReplyDispatcher(params: CreateWeChatReplyDispatcherParams) {
   const core = getWeChatRuntime();
-  const { cfg, agentId, runtime, provider, apiKey, proxyUrl, replyTo, accountId, textPrefix } = params;
+  const { cfg, agentId, runtime, account, provider, apiKey, proxyUrl, replyTo, accountId, textPrefix } = params;
 
   const prefixContext = createReplyPrefixContext({
     cfg,
@@ -65,7 +68,11 @@ export function createWeChatReplyDispatcher(params: CreateWeChatReplyDispatcherP
 
         for (const chunk of chunks) {
           try {
-            const result = await client.sendText(replyTo, chunk);
+            const result = await sendWithOutboundControl({
+              account,
+              log: runtime.log,
+              send: () => client.sendText(replyTo, chunk),
+            });
             runtime.log?.(`wechat[${accountId}] sendText 成功: msgId=${result.msgId}`);
           } catch (err) {
             runtime.error?.(`wechat[${accountId}] sendText 失败: ${String(err)}`);

@@ -12,6 +12,7 @@ import {
 import { tryConsumeRateLimit, tryRecordMessage } from "./message-state.js";
 import { ProxyClient } from "./proxy-client.js";
 import type { WechatMessageContext, ResolvedWeChatAccount } from "./types.js";
+import { sendWithOutboundControl } from "./outbound-control.js";
 
 export async function handleWeChatMessage(params: {
   cfg: ClawdbotConfig;
@@ -182,6 +183,7 @@ export async function handleWeChatMessage(params: {
       cfg,
       agentId,
       runtime: runtime as RuntimeEnv,
+      account,
       provider: account.provider,
       apiKey: account.apiKey,
       proxyUrl: account.proxyUrl,
@@ -266,5 +268,9 @@ async function maybeSendTextReply(params: {
   });
 
   const content = prefix ? `${prefix}${text}` : text;
-  await client.sendText(replyTo, content);
+  await sendWithOutboundControl({
+    account,
+    log: console.log,
+    send: () => client.sendText(replyTo, content),
+  });
 }

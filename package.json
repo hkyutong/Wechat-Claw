@@ -59,11 +59,12 @@
     "openclaw": ">=2026.2.9"
   },
   "scripts": {
-    "test": "npx tsx test-channel.ts && npx tsx test-plugin.ts && npx tsx test-business.ts && npx tsx test-wechatpadpro.ts",
+    "test": "npx tsx test-channel.ts && npx tsx test-plugin.ts && npx tsx test-business.ts && npx tsx test-wechatpadpro.ts && npx tsx test-stability.ts",
     "test:channel": "npx tsx test-channel.ts",
     "test:plugin": "npx tsx test-plugin.ts",
     "test:business": "npx tsx test-business.ts",
     "test:wechatpadpro": "npx tsx test-wechatpadpro.ts",
+    "test:stability": "npx tsx test-stability.ts",
     "typecheck": "tsc --noEmit",
     "verify": "npm run typecheck && npm run test"
   }

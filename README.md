@@ -154,6 +154,46 @@ docker compose logs -f openclaw-gateway
 
 这些措施可以降低风控概率，但不能把非官方协议的风险降到零。
 
+## 稳定性参数
+
+开源版默认已经内置三层稳态控制：
+
+- 登录状态机和二维码节流：复用仍在有效期内的二维码，并限制短时间内重新申请新码
+- 保守重连和熔断：启动失败按指数退避重试，达到阈值后进入冷却期
+- 出站限速与持久化登录态：同账号发送串行化、失败重试、最小发送间隔，以及登录态落盘
+
+常用参数都在 `channels.wechat.operations` 下：
+
+```yaml
+channels:
+  wechat:
+    operations:
+      qrThrottleMs: 90000
+      qrDisplayThrottleMs: 30000
+      loginPollIntervalMs: 5000
+      loginTimeoutMs: 300000
+      startupBaseBackoffMs: 15000
+      startupMaxBackoffMs: 600000
+      startupCircuitBreakerThreshold: 4
+      startupCircuitOpenMs: 900000
+      outboundMinIntervalMs: 1500
+      outboundRetryCount: 3
+      outboundRetryDelayMs: 2000
+      outboundMaxRetryDelayMs: 20000
+      outboundCircuitBreakerThreshold: 5
+      outboundCircuitOpenMs: 300000
+      statusProbeIntervalMs: 60000
+      statusProbeFailureThreshold: 3
+      stateFile: "~/.openclaw/wechat-state.json"
+```
+
+建议：
+
+- 如果登录二维码老是刚刷出来就失效，优先检查代理出口，再适当调大 `loginTimeoutMs`
+- 如果你担心频繁重登触发风控，不要调小 `qrThrottleMs` 和 `startupBaseBackoffMs`
+- 如果代理服务偶发抖动，保留默认 `startupCircuit*` 和 `outboundCircuit*`，不要为了“更快恢复”把它们改得过于激进
+- `stateFile` 建议放在持久卷里，这样容器重启后仍能保留登录态和熔断状态
+
 ## 升级
 
 ```bash
@@ -235,6 +275,10 @@ channels:
       rateLimitReplyText: "消息较多，请稍后再试。"
     operations:
       enableBuiltinCommands: true
+      qrThrottleMs: 90000
+      startupBaseBackoffMs: 15000
+      outboundMinIntervalMs: 1500
+      stateFile: "~/.openclaw/wechat-state.json"
 ```
 
 ## 多账号配置示例
