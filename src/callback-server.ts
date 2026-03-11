@@ -1,9 +1,10 @@
 import http from "http";
 import type { WechatMessageContext } from "./types.js";
+import { WEBHOOK_AUTH_QUERY_PARAM } from "./webhook-auth.js";
 
 interface CallbackServerOptions {
   port: number;
-  apiKey: string;
+  authToken?: string;
   path?: string;
   onMessage: (message: WechatMessageContext) => void;
   abortSignal?: AbortSignal;
@@ -14,21 +15,30 @@ const MAX_WEBHOOK_BODY_BYTES = 1024 * 1024;
 export async function startCallbackServer(
   options: CallbackServerOptions
 ): Promise<{ port: number; stop: () => void }> {
-  const { port, path = "/webhook/wechat", onMessage, abortSignal } = options;
+  const { port, path = "/webhook/wechat", authToken, onMessage, abortSignal } = options;
 
   const server = http.createServer((req, res) => {
-    // 回调 URL 可能带查询参数，这里只取路径部分。
-    const url = req.url?.split("?")[0] || "";
-    if (url === path && req.method === "POST") {
+    const requestUrl = new URL(req.url || "/", "http://localhost");
+    if (requestUrl.pathname === path && req.method === "POST") {
+      if (authToken && requestUrl.searchParams.get(WEBHOOK_AUTH_QUERY_PARAM) !== authToken) {
+        req.resume();
+        res.writeHead(401).end("Unauthorized");
+        return;
+      }
+
       let body = "";
+      let bodyTooLarge = false;
       req.on("data", (chunk) => {
+        if (bodyTooLarge) return;
         body += chunk;
         if (Buffer.byteLength(body, "utf8") > MAX_WEBHOOK_BODY_BYTES) {
+          bodyTooLarge = true;
           res.writeHead(413).end("Payload Too Large");
           req.destroy();
         }
       });
       req.on("end", async () => {
+        if (bodyTooLarge) return;
         try {
           const payload = JSON.parse(body);
           const message = convertToMessageContext(payload);
@@ -53,7 +63,10 @@ export async function startCallbackServer(
       console.log(`📡 YutoAI 微信回调服务监听于 0.0.0.0:${port}`);
       console.log(`   回调地址: http://localhost:${port}${path}`);
 
+      let stopped = false;
       const stop = () => {
+        if (stopped) return;
+        stopped = true;
         server.close(() => {
           console.log(`📡 YutoAI 微信回调服务已停止，端口 ${port}`);
         });

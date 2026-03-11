@@ -3,8 +3,11 @@
  * 建议只在服务器环境运行，不在本地落任何构建产物。
  */
 
+import assert from "node:assert/strict";
 import { ProxyClient } from "./src/proxy-client.js";
 import { startCallbackServer } from "./src/callback-server.js";
+import type { WechatMessageContext } from "./src/types.js";
+import { buildWebhookAuthToken, attachWebhookAuthToken } from "./src/webhook-auth.js";
 
 // ===== 调试配置 =====
 const TEST_CONFIG = {
@@ -12,6 +15,12 @@ const TEST_CONFIG = {
   accountId: "default",
   proxyUrl: "http://localhost:13800/v1", // 你的代理服务地址
 };
+
+const WEBHOOK_AUTH_TOKEN = buildWebhookAuthToken(
+  TEST_CONFIG.accountId,
+  TEST_CONFIG.apiKey
+);
+let receivedMessage: WechatMessageContext | null = null;
 
 // ===== 调试 1: ProxyClient =====
 async function testProxyClient() {
@@ -49,8 +58,9 @@ async function testCallbackServer() {
   try {
     const { port, stop } = await startCallbackServer({
       port: 18790,
-      apiKey: TEST_CONFIG.apiKey,
+      authToken: WEBHOOK_AUTH_TOKEN,
       onMessage: (message) => {
+        receivedMessage = message;
         console.log("  📩 收到消息:", message);
       },
     });
@@ -85,15 +95,30 @@ async function testWebhookReceive() {
   };
 
   try {
-    const response = await fetch("http://localhost:18790/webhook/wechat", {
+    const unauthorized = await fetch("http://localhost:18790/webhook/wechat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(testPayload),
     });
+    assert.equal(unauthorized.status, 401, "未鉴权请求应返回 401");
+    console.log("  ✓ 未鉴权请求被拒绝:", unauthorized.status);
+
+    const response = await fetch(
+      attachWebhookAuthToken("http://localhost:18790/webhook/wechat", WEBHOOK_AUTH_TOKEN),
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(testPayload),
+      }
+    );
+    assert.equal(response.status, 200, "鉴权后的 webhook 应返回 200");
+    assert.ok(receivedMessage, "回调服务应收到消息");
+    assert.equal(receivedMessage.content, "测试消息");
 
     console.log("  ✓ Webhook 响应:", response.status);
   } catch (err: any) {
     console.log("  ✗ Webhook 请求失败:", err.message);
+    throw err;
   }
 }
 

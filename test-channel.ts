@@ -3,6 +3,7 @@
  * 建议在服务器环境执行。
  */
 
+import assert from "node:assert/strict";
 import { wechatPlugin } from "./src/channel.js";
 import type { ClawdbotConfig } from "openclaw/plugin-sdk";
 
@@ -46,12 +47,16 @@ async function testConfig() {
   // 检查 listAccountIds
   console.log("1. listAccountIds:");
   const accountIds = wechatPlugin.config!.listAccountIds!(mockConfig);
+  assert.deepEqual(accountIds, ["default"]);
   console.log("   账号列表:", accountIds);
 
   // 检查 resolveAccount
   console.log("\n2. resolveAccount:");
   try {
     const account = await wechatPlugin.config!.resolveAccount!(mockConfig, "default");
+    assert.equal(account.accountId, "default");
+    assert.equal(account.proxyUrl, "http://127.0.0.1:13800");
+    assert.equal(account.webhookPath, "/webhook/wechat");
     console.log("   账号信息:", {
       accountId: account.accountId,
       enabled: account.enabled,
@@ -68,6 +73,7 @@ async function testConfig() {
   console.log("\n3. describeAccount:");
   const account = await wechatPlugin.config!.resolveAccount!(mockConfig, "default");
   const description = wechatPlugin.config!.describeAccount!(account);
+  assert.equal(description.accountId, "default");
   console.log("   描述:", description);
 }
 
@@ -82,6 +88,7 @@ async function testStatus() {
       cfg: mockConfig,
       accountId: "default",
     });
+    assert.equal(typeof result.ok, "boolean");
     console.log("   状态:", result);
   } catch (err: any) {
     console.log("   错误 (预期内，可能代理服务未启动):", err.message);
@@ -95,14 +102,15 @@ async function testMessaging() {
   // 检查 normalizeTarget
   console.log("1. normalizeTarget:");
   const testCases = [
-    "user:wxid_abc123",
-    "group:12345@chatroom",
-    "wxid_direct",
-    "wxid_xxx@chatroom",
+    ["user:wxid_abc123", { type: "direct", id: "wxid_abc123" }],
+    ["group:12345@chatroom", { type: "channel", id: "12345@chatroom" }],
+    ["wxid_direct", { type: "direct", id: "wxid_direct" }],
+    ["12345@chatroom", { type: "channel", id: "12345@chatroom" }],
   ];
 
-  for (const target of testCases) {
+  for (const [target, expected] of testCases) {
     const normalized = wechatPlugin.messaging!.normalizeTarget!(target);
+    assert.deepEqual(normalized, expected);
     console.log(`   "${target}" ->`, normalized);
   }
 
@@ -114,6 +122,7 @@ async function testMessaging() {
   const testIds = ["wxid_abc123", "12345@chatroom", "invalid_id"];
   for (const id of testIds) {
     const looksLikeId = resolver.looksLikeId!(id);
+    assert.equal(looksLikeId, id !== "invalid_id");
     console.log(`   "${id}" 看起来像ID?`, looksLikeId);
   }
 }
@@ -124,6 +133,7 @@ async function testGateway() {
   console.log("注意: 这需要代理服务运行，跳过详细测试");
 
   // 这里只检查 gateway 对象存在
+  assert.ok(wechatPlugin.gateway?.startAccount);
   console.log("1. gateway.startAccount 存在?", !!wechatPlugin.gateway?.startAccount);
 }
 
@@ -132,6 +142,8 @@ async function testOutbound() {
   console.log("\n📤 测试发送模块\n");
   console.log("注意: 这需要代理服务和登录状态，跳过详细测试");
 
+  assert.ok(wechatPlugin.outbound?.sendText);
+  assert.ok(wechatPlugin.outbound?.sendMedia);
   console.log("1. sendText 存在?", !!wechatPlugin.outbound?.sendText);
   console.log("2. sendMedia 存在?", !!wechatPlugin.outbound?.sendMedia);
 }

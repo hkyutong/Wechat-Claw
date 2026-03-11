@@ -86,6 +86,8 @@ openclaw gateway start
 - `proxyUrl` 必填，示例统一使用 `13800`
 - `webhookHost` 建议显式配置公网 IP 或域名，不要依赖自动探测
 - `webhookPath` 默认是 `/webhook/wechat`，现在服务端和注册逻辑都支持自定义路径
+- 节点会自动为 webhook 注册地址附加派生鉴权参数，反向代理不要丢弃查询参数
+- 不带前缀的 `xxxx@chatroom` 会自动按群目标处理
 - 回复分发与回调注册都依赖同一份 `proxyUrl`
 
 ## 服务器验证建议
@@ -96,6 +98,13 @@ openclaw gateway start
 npm run typecheck
 npx tsx test-channel.ts
 npx tsx test-plugin.ts
+```
+
+如果服务器宿主机没有 Node，也可以直接用 Docker 验证：
+
+```bash
+docker run --rm -v "$(pwd):/app" -w /app node:22-bullseye \
+  bash -lc 'npm ci --ignore-scripts && npm run typecheck && npx tsx test-channel.ts && npx tsx test-plugin.ts'
 ```
 
 本地工作区只保留源码，不落构建产物。

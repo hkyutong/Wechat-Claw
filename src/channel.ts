@@ -5,6 +5,7 @@ import { ProxyClient } from "./proxy-client.js";
 import { startCallbackServer } from "./callback-server.js";
 import { handleWeChatMessage } from "./bot.js";
 import { displayQRCode, displayLoginSuccess } from "./utils/qrcode.js";
+import { attachWebhookAuthToken, buildWebhookAuthToken } from "./webhook-auth.js";
 
 // 代理服务地址（必须配置）
 // openclaw config set channels.wechat.proxyUrl "http://你的代理服务:13800"
@@ -122,6 +123,39 @@ function filterDirectoryEntries(ids: string[], query: string | undefined, limit:
     ? ids.filter((id) => id.toLowerCase().includes(keyword))
     : ids;
   return filtered.slice(0, limit);
+}
+
+function isWeChatGroupId(target: string): boolean {
+  return target.includes("@chatroom");
+}
+
+function normalizeWeChatTarget(target: string): { type: "direct" | "channel"; id: string } {
+  if (target.startsWith("user:")) {
+    return { type: "direct", id: target.slice(5) };
+  }
+  if (target.startsWith("group:")) {
+    return { type: "channel", id: target.slice(6) };
+  }
+  if (isWeChatGroupId(target)) {
+    return { type: "channel", id: target };
+  }
+  return { type: "direct", id: target };
+}
+
+function createAccountClient(account: ResolvedWeChatAccount): ProxyClient {
+  return new ProxyClient({
+    apiKey: account.apiKey,
+    accountId: account.accountId,
+    baseUrl: account.proxyUrl,
+  });
+}
+
+function applyResolvedIdentity(account: ResolvedWeChatAccount, wcId: string, nickName?: string): void {
+  account.wcId = wcId;
+  account.nickName = nickName;
+  account.isLoggedIn = true;
+  account.config.wcId = wcId;
+  account.config.nickName = nickName;
 }
 
 export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
@@ -341,21 +375,12 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
   },
 
   messaging: {
-    normalizeTarget: (target) => {
-      if (target.startsWith("user:")) {
-        return { type: "direct", id: target.slice(5) };
-      }
-      if (target.startsWith("group:")) {
-        return { type: "channel", id: target.slice(6) };
-      }
-      // 没有前缀时默认按私聊处理。
-      return { type: "direct", id: target };
-    },
+    normalizeTarget: (target) => normalizeWeChatTarget(target),
 
     targetResolver: {
       looksLikeId: (id) => {
         // wxid_ 开头视为私聊 ID，@chatroom 视为群聊 ID。
-        return id.startsWith("wxid_") || id.includes("@chatroom");
+        return id.startsWith("wxid_") || isWeChatGroupId(id);
       },
       hint: "<wxid_xxx|xxxx@chatroom|user:wxid_xxx|group:xxx@chatroom>",
     },
@@ -368,11 +393,7 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
       const account = await resolveWeChatAccount({ cfg, accountId });
       if (!account.isLoggedIn) return [];
 
-      const client = new ProxyClient({
-        apiKey: account.apiKey,
-        accountId,
-        baseUrl: account.proxyUrl,
-      });
+      const client = createAccountClient(account);
       const contacts = await client.getContacts(account.wcId!);
 
       return filterDirectoryEntries(contacts.friends, query, limit).map((id) => ({
@@ -386,11 +407,7 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
       const account = await resolveWeChatAccount({ cfg, accountId });
       if (!account.isLoggedIn) return [];
 
-      const client = new ProxyClient({
-        apiKey: account.apiKey,
-        accountId,
-        baseUrl: account.proxyUrl,
-      });
+      const client = createAccountClient(account);
       const contacts = await client.getContacts(account.wcId!);
 
       return filterDirectoryEntries(contacts.chatrooms, query, limit).map((id) => ({
@@ -422,11 +439,7 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
 
     probeAccount: async ({ cfg, accountId }) => {
       const account = await resolveWeChatAccount({ cfg, accountId });
-      const client = new ProxyClient({
-        apiKey: account.apiKey,
-        accountId,
-        baseUrl: account.proxyUrl,
-      });
+      const client = createAccountClient(account);
 
       try {
         const status = await client.getStatus();
@@ -467,11 +480,7 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
       log?.info(`启动 YutoAI 微信账号: ${accountId}`);
       log?.info(`代理地址: ${account.proxyUrl}`);
 
-      const client = new ProxyClient({
-        apiKey: account.apiKey,
-        accountId,
-        baseUrl: account.proxyUrl,
-      });
+      const client = createAccountClient(account);
 
       // 先检查当前登录状态。
       const status = await client.getStatus();
@@ -524,14 +533,10 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
         log?.info(`登录成功: ${loginResult.nickName} (${loginResult.wcId})`);
 
         // 更新当前账号的内存态。
-        account.wcId = loginResult.wcId;
-        account.nickName = loginResult.nickName;
-        account.isLoggedIn = true;
+        applyResolvedIdentity(account, loginResult.wcId, loginResult.nickName);
       } else {
         log?.info(`已登录: ${status.nickName} (${status.wcId})`);
-        account.wcId = status.wcId;
-        account.nickName = status.nickName;
-        account.isLoggedIn = true;
+        applyResolvedIdentity(account, status.wcId!, status.nickName);
       }
 
       // 启动回调服务接收消息。
@@ -563,8 +568,11 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
         log?.warn(`建议配置: openclaw config set channels.wechat.webhookHost "你的公网 IP 或域名"`);
       }
 
-      const webhookUrl = `http://${webhookHost}:${port}${account.webhookPath}`;
-      log?.info(`使用 webhook 地址: ${webhookUrl}`);
+      const webhookBaseUrl = `http://${webhookHost}:${port}${account.webhookPath}`;
+      const webhookAuthToken = buildWebhookAuthToken(account.accountId, account.apiKey);
+      const webhookUrl = attachWebhookAuthToken(webhookBaseUrl, webhookAuthToken);
+      log?.info(`使用 webhook 地址: ${webhookBaseUrl}`);
+      log?.info("Webhook 派生鉴权已启用");
 
       // 向代理服务注册 webhook。
       log?.info(`向代理服务注册 webhook，wcId=${account.wcId}`);
@@ -573,7 +581,7 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
       const { stop } = await startCallbackServer({
         port,
         path: account.webhookPath,
-        apiKey: account.apiKey,
+        authToken: webhookAuthToken,
         onMessage: (message) => {
           handleWeChatMessage({
             cfg,
@@ -588,10 +596,8 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
         abortSignal,
       });
 
-      abortSignal?.addEventListener("abort", stop);
-
       log?.info(`YutoAI 微信账号 ${accountId} 已启动，监听端口 ${port}`);
-      log?.info(`Webhook 地址: ${webhookUrl}`);
+      log?.info(`Webhook 地址: ${webhookBaseUrl}`);
 
       // 返回停止句柄，供运行时收尾。
       return {
@@ -606,11 +612,7 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
   outbound: {
     async sendText({ cfg, to, text, accountId }) {
       const account = await resolveWeChatAccount({ cfg, accountId });
-      const client = new ProxyClient({
-        apiKey: account.apiKey,
-        accountId,
-        baseUrl: account.proxyUrl,
-      });
+      const client = createAccountClient(account);
 
       if (!account.wcId) {
         throw new Error("当前账号尚未登录");
@@ -627,11 +629,7 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
 
     async sendMedia({ cfg, to, mediaUrl, text, accountId }) {
       const account = await resolveWeChatAccount({ cfg, accountId });
-      const client = new ProxyClient({
-        apiKey: account.apiKey,
-        accountId,
-        baseUrl: account.proxyUrl,
-      });
+      const client = createAccountClient(account);
 
       if (!account.wcId) {
         throw new Error("当前账号尚未登录");
