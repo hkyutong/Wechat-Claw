@@ -72,12 +72,17 @@ npm install -g openclaw@latest
 openclaw onboard --install-daemon
 ```
 
-### 2. 安装插件
+### 2. 拉取源码并安装插件
 
-当前仓库还没有发布到 npm 公共包名，安装请直接使用 GitHub 源码地址：
+`OpenClaw` 当前只接受 npm registry 包名、归档文件或本地路径安装，不接受 GitHub URL 直接安装。
+
+最稳妥的公开安装方式是先 clone，再从本地路径安装：
 
 ```bash
-openclaw plugins install "git+https://github.com/hkyutong/Wechat-Claw.git"
+git clone https://github.com/hkyutong/Wechat-Claw.git
+cd Wechat-Claw
+openclaw plugins install "$(pwd)"
+cd ..
 ```
 
 ### 3. 写入最小配置
@@ -110,10 +115,11 @@ openclaw gateway start --verbose
 
 ## Docker 部署
 
-如果你把 `OpenClaw` 跑在 Docker 里，流程也是一样的，只是把命令放进 `openclaw-cli` 容器执行：
+如果你把 `OpenClaw` 跑在 Docker 里，先把仓库 clone 到宿主机，再把源码目录挂进 `openclaw-cli` 容器：
 
 ```bash
-docker compose run --rm openclaw-cli plugins install "git+https://github.com/hkyutong/Wechat-Claw.git"
+git clone https://github.com/hkyutong/Wechat-Claw.git
+docker compose run --rm -v "$PWD/Wechat-Claw:/plugin:ro" openclaw-cli plugins install /plugin
 docker compose run --rm openclaw-cli config set channels.wechat.enabled true
 docker compose run --rm openclaw-cli config set channels.wechat.provider "wechatpadpro"
 docker compose run --rm openclaw-cli config set channels.wechat.apiKey "your-proxy-api-key"
@@ -151,10 +157,15 @@ docker compose logs -f openclaw-gateway
 ## 升级
 
 ```bash
-openclaw plugins update wechat
+git -C /path/to/Wechat-Claw pull --ff-only
+openclaw plugins uninstall wechat --force
+rm -rf ~/.openclaw/extensions/wechat
+openclaw plugins install /path/to/Wechat-Claw
 ```
 
-如果你是通过本地目录挂载安装的，直接更新源码后重启 `openclaw-gateway` 即可。
+如果你跑在 Docker 里，把上面的 `openclaw` 命令换成 `docker compose run --rm openclaw-cli ...` 即可，最后记得重启 `openclaw-gateway`。
+
+`openclaw plugins update wechat` 只对 npm 安装有效，不适用于当前这种路径安装。
 
 ## 最小配置示例
 

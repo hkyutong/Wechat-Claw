@@ -42,11 +42,6 @@
       "docsLabel": "wechat",
       "blurb": "OpenClaw 微信通道插件，通过 Proxy API 接入微信账号。",
       "order": 80
-    },
-    "install": {
-      "npmSpec": "git+https://github.com/hkyutong/Wechat-Claw.git",
-      "localPath": ".",
-      "defaultChoice": "npm"
     }
   },
   "dependencies": {
