@@ -4,7 +4,7 @@
  */
 
 import assert from "node:assert/strict";
-import plugin from "./index.ts";
+import plugin from "./index.js";
 import { ProxyClient } from "./src/proxy-client.js";
 import { startCallbackServer } from "./src/callback-server.js";
 import type { WechatMessageContext } from "./src/types.js";
