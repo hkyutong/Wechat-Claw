@@ -1,37 +1,17 @@
 import type { ClawdbotConfig, RuntimeEnv } from "openclaw/plugin-sdk";
 import { getWeChatRuntime } from "./runtime.js";
 import { createWeChatReplyDispatcher } from "./reply-dispatcher.js";
+import {
+  buildGroupReplyPrefix,
+  composeSessionKey,
+  evaluateWeChatMessage,
+  resolveBuiltinCommandAction,
+  resolveReplyMode,
+  resolveRoutePeer,
+} from "./message-policy.js";
+import { tryConsumeRateLimit, tryRecordMessage } from "./message-state.js";
+import { ProxyClient } from "./proxy-client.js";
 import type { WechatMessageContext, ResolvedWeChatAccount } from "./types.js";
-
-// 消息去重，避免代理回调或网络抖动造成重复投递。
-const processedMessages = new Map<string, number>();
-const DEDUP_WINDOW_MS = 30 * 60 * 1000; // 30 minutes
-const DEDUP_MAX_SIZE = 1000;
-const DEDUP_CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
-
-let lastCleanup = Date.now();
-
-function tryRecordMessage(messageId: string): boolean {
-  const now = Date.now();
-
-  // 定期清理过期去重记录。
-  if (now - lastCleanup > DEDUP_CLEANUP_INTERVAL_MS) {
-    lastCleanup = now;
-    for (const [id, ts] of processedMessages) {
-      if (now - ts > DEDUP_WINDOW_MS) processedMessages.delete(id);
-    }
-  }
-
-  // 达到上限时淘汰最早的记录，避免内存持续增长。
-  if (processedMessages.size >= DEDUP_MAX_SIZE) {
-    const oldest = processedMessages.keys().next().value;
-    if (oldest) processedMessages.delete(oldest);
-  }
-
-  if (processedMessages.has(messageId)) return false;
-  processedMessages.set(messageId, now);
-  return true;
-}
 
 export async function handleWeChatMessage(params: {
   cfg: ClawdbotConfig;
@@ -44,59 +24,114 @@ export async function handleWeChatMessage(params: {
 
   const log = runtime?.log ?? console.log;
   const error = runtime?.error ?? console.error;
+  const riskControl = account.config.riskControl ?? {};
 
-  // 先做去重，避免重复消息进入后续链路。
-  if (!tryRecordMessage(message.id)) {
-    log(`wechat: 跳过重复消息 ${message.id}`);
+  if (!tryRecordMessage({
+    accountId: account.accountId,
+    messageId: message.id,
+    dedupWindowMs: riskControl.dedupWindowMs,
+    dedupMaxSize: riskControl.dedupMaxSize,
+  })) {
+    log(`wechat[${accountId}]: 跳过重复消息 ${message.id}`);
     return;
   }
 
   const isGroup = !!message.group;
-
   log(`wechat[${accountId}]: 收到 ${message.type} 消息，发送方=${message.sender.id}${isGroup ? `，群=${message.group!.id}` : ""}`);
 
-  // 当前节点只处理文本消息，其余类型先跳过。
-  if (message.type !== "text") {
-    log(`wechat[${accountId}]: 暂不处理非文本消息类型 ${message.type}`);
+  const evaluation = evaluateWeChatMessage({ account, message });
+  if (!evaluation.accepted) {
+    log(`wechat[${accountId}]: 消息被策略拒绝，原因=${evaluation.reason}`);
+    await maybeSendTextReply({
+      account,
+      message,
+      text: evaluation.autoReplyText,
+      replyMode: resolveReplyMode({ account, message, evaluation }),
+    });
+    return;
+  }
+
+  if (!consumeRateLimit({ account, message })) {
+    log(`wechat[${accountId}]: 命中限流，发送方=${message.sender.id}`);
+    await maybeSendTextReply({
+      account,
+      message,
+      text: riskControl.rateLimitReplyText,
+      replyMode: resolveReplyMode({ account, message, evaluation }),
+    });
     return;
   }
 
   try {
     const core = getWeChatRuntime();
+    const routePeer = resolveRoutePeer({ message, evaluation });
+    const route = core.channel.routing.resolveAgentRoute({
+      cfg,
+      channel: "wechat",
+      accountId: account.accountId,
+      peer: routePeer,
+    });
+
+    const agentId = evaluation.agentIdOverride || route.agentId;
+    const sessionKey = composeSessionKey({
+      baseSessionKey: route.sessionKey,
+      sessionMode: evaluation.sessionMode,
+      message,
+    });
+    const replyMode = resolveReplyMode({ account, message, evaluation });
+    const preview = evaluation.agentBody.replace(/\s+/g, " ").slice(0, 160);
+    const inboundLabel = isGroup
+      ? `YutoAI 微信节点[${accountId}] 群消息 ${message.group!.id}`
+      : `YutoAI 微信节点[${accountId}] 私聊消息 ${message.sender.id}`;
+
+    core.system?.enqueueSystemEvent?.(`${inboundLabel}: ${preview}`, {
+      sessionKey,
+      contextKey: `wechat:message:${account.accountId}:${message.id}`,
+    });
+
+    const builtinCommand = resolveBuiltinCommandAction({ account, message, evaluation });
+    if (builtinCommand) {
+      await maybeSendTextReply({
+        account,
+        message,
+        text: builtinCommand.replyText,
+        replyMode,
+      });
+      if (builtinCommand.stopAfterReply) {
+        return;
+      }
+    }
+
+    if (evaluation.autoReplyText) {
+      await maybeSendTextReply({
+        account,
+        message,
+        text: evaluation.autoReplyText,
+        replyMode,
+      });
+      if (evaluation.skipAgent) {
+        return;
+      }
+    }
+
+    if (evaluation.skipAgent) {
+      log(`wechat[${accountId}]: 规则 ${evaluation.matchedRule?.name || ""} 仅执行自动动作，不进入智能体`);
+      return;
+    }
+
+    if (replyMode === "silent") {
+      log(`wechat[${accountId}]: 消息已入链路，但配置为 silent，不向微信侧回发`);
+      return;
+    }
 
     const wechatFrom = `wechat:${message.sender.id}`;
     const wechatTo = isGroup
       ? `group:${message.group!.id}`
       : `user:${message.sender.id}`;
 
-    const peerId = isGroup ? message.group!.id : message.sender.id;
-
-    const route = core.channel.routing.resolveAgentRoute({
-      cfg,
-      channel: "wechat",
-      accountId: account.accountId,
-      peer: {
-        kind: isGroup ? "group" : "direct",
-        id: peerId,
-      },
-    });
-
-    const preview = message.content.replace(/\s+/g, " ").slice(0, 160);
-    const inboundLabel = isGroup
-      ? `YutoAI 微信节点[${accountId}] 群消息 ${message.group!.id}`
-      : `YutoAI 微信节点[${accountId}] 私聊消息 ${message.sender.id}`;
-
-    core.system.enqueueSystemEvent(`${inboundLabel}: ${preview}`, {
-      sessionKey: route.sessionKey,
-      contextKey: `wechat:message:${peerId}:${message.id}`,
-    });
-
     const envelopeOptions = core.channel.reply.resolveEnvelopeFormatOptions(cfg);
-
-    // 群聊场景下把说话人并入正文，方便下游智能体还原上下文。
     const speaker = message.sender.name || message.sender.id;
-    const messageBody = `${speaker}: ${message.content}`;
-
+    const messageBody = `${speaker}: ${evaluation.agentBody}`;
     const envelopeFrom = isGroup
       ? `${message.group!.id}:${message.sender.id}`
       : message.sender.id;
@@ -112,39 +147,49 @@ export async function handleWeChatMessage(params: {
     const ctxPayload = core.channel.reply.finalizeInboundContext({
       Body: body,
       RawBody: message.content,
-      CommandBody: message.content,
+      CommandBody: evaluation.commandBody || evaluation.normalizedText,
       From: wechatFrom,
       To: wechatTo,
-      SessionKey: route.sessionKey,
+      SessionKey: sessionKey,
       AccountId: route.accountId,
       ChatType: isGroup ? "group" : "direct",
       GroupSubject: isGroup ? message.group!.id : undefined,
-      SenderName: message.sender.name || message.sender.id,
+      SenderName: speaker,
       SenderId: message.sender.id,
       Provider: "wechat" as const,
       Surface: "wechat" as const,
       MessageSid: message.id,
       Timestamp: Date.now(),
-      WasMentioned: false,
+      WasMentioned: evaluation.mentioned,
       CommandAuthorized: true,
       OriginatingChannel: "wechat" as const,
       OriginatingTo: wechatTo,
+      WechatMessageType: message.type,
+      WechatRule: evaluation.matchedRule?.name,
+      WechatReplyMode: replyMode,
+      WechatAuditTags: evaluation.auditTags,
+      WechatSensitiveWord: evaluation.sensitiveWord,
     });
 
-    // 群聊回群，私聊回发件人。
-    const replyTo = isGroup ? message.group!.id : message.sender.id;
+    const replyTo = replyMode === "direct"
+      ? message.sender.id
+      : message.group?.id ?? message.sender.id;
+    const textPrefix = replyMode === "group"
+      ? buildGroupReplyPrefix({ account, message })
+      : undefined;
 
     const { dispatcher, replyOptions, markDispatchIdle } = createWeChatReplyDispatcher({
       cfg,
-      agentId: route.agentId,
+      agentId,
       runtime: runtime as RuntimeEnv,
       apiKey: account.apiKey,
       proxyUrl: account.proxyUrl,
       replyTo,
       accountId: account.accountId,
+      textPrefix,
     });
 
-    log(`wechat[${accountId}]: 开始分发给智能体，session=${route.sessionKey}`);
+    log(`wechat[${accountId}]: 开始分发给智能体，session=${sessionKey}，agent=${agentId}`);
 
     const { queuedFinal, counts } = await core.channel.reply.dispatchReplyFromConfig({
       ctx: ctxPayload,
@@ -154,9 +199,60 @@ export async function handleWeChatMessage(params: {
     });
 
     markDispatchIdle();
-
     log(`wechat[${accountId}]: 分发完成，queuedFinal=${queuedFinal}，replies=${counts.final}`);
   } catch (err) {
     error(`wechat[${accountId}]: 分发消息失败: ${String(err)}`);
   }
+}
+
+function consumeRateLimit(params: {
+  account: ResolvedWeChatAccount;
+  message: WechatMessageContext;
+}): boolean {
+  const { account, message } = params;
+  const riskControl = account.config.riskControl ?? {};
+
+  if (!tryConsumeRateLimit({
+    scopeKey: `wechat:${account.accountId}:sender:${message.sender.id}`,
+    limit: riskControl.senderRateLimitPerMinute,
+  })) {
+    return false;
+  }
+
+  if (message.group && !tryConsumeRateLimit({
+    scopeKey: `wechat:${account.accountId}:group:${message.group.id}`,
+    limit: riskControl.groupRateLimitPerMinute,
+  })) {
+    return false;
+  }
+
+  return true;
+}
+
+async function maybeSendTextReply(params: {
+  account: ResolvedWeChatAccount;
+  message: WechatMessageContext;
+  text?: string;
+  replyMode: "group" | "direct" | "silent";
+}): Promise<void> {
+  const { account, message, text, replyMode } = params;
+  if (!text?.trim() || replyMode === "silent") {
+    return;
+  }
+
+  const replyTo = replyMode === "direct"
+    ? message.sender.id
+    : message.group?.id ?? message.sender.id;
+  const prefix = replyMode === "group"
+    ? buildGroupReplyPrefix({ account, message })
+    : undefined;
+
+  const client = new ProxyClient({
+    apiKey: account.apiKey,
+    accountId: account.accountId,
+    baseUrl: account.proxyUrl,
+  });
+
+  const content = prefix ? `${prefix}${text}` : text;
+  await client.sendText(replyTo, content);
 }

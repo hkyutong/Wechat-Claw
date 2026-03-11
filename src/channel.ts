@@ -1,6 +1,7 @@
 import type { ChannelPlugin, ClawdbotConfig } from "openclaw/plugin-sdk";
 import { DEFAULT_ACCOUNT_ID } from "openclaw/plugin-sdk";
 import type { ResolvedWeChatAccount, WechatConfig, WechatAccountConfig } from "./types.js";
+import { WechatConfigSchema } from "./config-schema.js";
 import { ProxyClient } from "./proxy-client.js";
 import { startCallbackServer } from "./callback-server.js";
 import { handleWeChatMessage } from "./bot.js";
@@ -20,17 +21,82 @@ const PLUGIN_META = {
   order: 80,
 } as const;
 
+function pickSharedAccountConfig(source?: WechatConfig | WechatAccountConfig): Partial<WechatAccountConfig> {
+  if (!source) {
+    return {};
+  }
+
+  const next: Partial<WechatAccountConfig> = {};
+
+  if (source.inbound) {
+    next.inbound = { ...source.inbound };
+  }
+  if (source.routing) {
+    next.routing = {
+      ...source.routing,
+      rules: source.routing.rules?.map((rule) => ({ ...rule })),
+    };
+  }
+  if (source.reply) {
+    next.reply = { ...source.reply };
+  }
+  if (source.riskControl) {
+    next.riskControl = { ...source.riskControl };
+  }
+  if (source.operations) {
+    next.operations = { ...source.operations };
+  }
+
+  return next;
+}
+
+function mergeAccountConfig(
+  baseConfig: Partial<WechatAccountConfig>,
+  overrideConfig?: WechatAccountConfig
+): WechatAccountConfig | undefined {
+  if (!overrideConfig && Object.keys(baseConfig).length === 0) {
+    return undefined;
+  }
+
+  return {
+    ...baseConfig,
+    ...overrideConfig,
+    inbound: {
+      ...baseConfig.inbound,
+      ...overrideConfig?.inbound,
+    },
+    routing: {
+      ...baseConfig.routing,
+      ...overrideConfig?.routing,
+      rules: overrideConfig?.routing?.rules?.map((rule) => ({ ...rule }))
+        ?? baseConfig.routing?.rules?.map((rule) => ({ ...rule })),
+    },
+    reply: {
+      ...baseConfig.reply,
+      ...overrideConfig?.reply,
+    },
+    riskControl: {
+      ...baseConfig.riskControl,
+      ...overrideConfig?.riskControl,
+    },
+    operations: {
+      ...baseConfig.operations,
+      ...overrideConfig?.operations,
+    },
+  } as WechatAccountConfig;
+}
+
 /**
  * 解析微信账号配置
  * 支持简化配置（顶级字段）和多账号配置（accounts）
  */
-async function resolveWeChatAccount({
+function resolveWeChatAccount({
   cfg,
   accountId,
 }: {
   cfg: ClawdbotConfig;
   accountId: string;
-}): Promise<ResolvedWeChatAccount> {
+}): ResolvedWeChatAccount {
   const wechatCfg = cfg.channels?.wechat as WechatConfig | undefined;
   const isDefault = accountId === DEFAULT_ACCOUNT_ID;
 
@@ -47,19 +113,19 @@ async function resolveWeChatAccount({
       webhookHost: wechatCfg?.webhookHost,
       webhookPort: wechatCfg?.webhookPort,
       webhookPath: wechatCfg?.webhookPath,
+      ...pickSharedAccountConfig(wechatCfg),
     };
 
     // 如果存在 accounts.default，则作为默认值补齐。
     const defaultAccount = wechatCfg?.accounts?.default;
-    accountCfg = {
-      ...topLevelConfig,
-      ...defaultAccount,
-      apiKey: topLevelConfig.apiKey || defaultAccount?.apiKey || "",
-    };
+    accountCfg = mergeAccountConfig(topLevelConfig, defaultAccount);
+    if (accountCfg) {
+      accountCfg.apiKey = topLevelConfig.apiKey || defaultAccount?.apiKey || "";
+    }
 
     enabled = accountCfg.enabled ?? wechatCfg?.enabled ?? true;
   } else {
-    accountCfg = wechatCfg?.accounts?.[accountId];
+    accountCfg = mergeAccountConfig(pickSharedAccountConfig(wechatCfg), wechatCfg?.accounts?.[accountId]);
     enabled = accountCfg?.enabled ?? true;
   }
 
@@ -142,6 +208,10 @@ function normalizeWeChatTarget(target: string): { type: "direct" | "channel"; id
   return { type: "direct", id: target };
 }
 
+function looksLikeImageUrl(url: string): boolean {
+  return /\.(png|jpe?g|gif|webp|bmp|svg)(\?.*)?$/i.test(url);
+}
+
 function createAccountClient(account: ResolvedWeChatAccount): ProxyClient {
   return new ProxyClient({
     apiKey: account.apiKey,
@@ -156,6 +226,38 @@ function applyResolvedIdentity(account: ResolvedWeChatAccount, wcId: string, nic
   account.isLoggedIn = true;
   account.config.wcId = wcId;
   account.config.nickName = nickName;
+}
+
+function resolveAllowEntries(account: ResolvedWeChatAccount): string[] {
+  const inbound = account.config.inbound;
+  return [
+    ...(inbound?.allowSenders ?? []).map((id) => `user:${id}`),
+    ...(inbound?.allowGroups ?? []).map((id) => `group:${id}`),
+  ];
+}
+
+function collectSecurityWarnings(account: ResolvedWeChatAccount): string[] {
+  const warnings: string[] = [];
+  const inbound = account.config.inbound;
+  const risk = account.config.riskControl;
+
+  if (inbound?.allowGroup !== false && !inbound?.requireMentionInGroup && !(inbound?.allowGroups?.length)) {
+    warnings.push("群聊已开启但未要求 @ 提及，也没有群白名单，容易引入噪声。");
+  }
+
+  if (!risk?.senderRateLimitPerMinute && !risk?.groupRateLimitPerMinute) {
+    warnings.push("未配置消息限流，容易在回调抖动或群刷屏时放大流量。");
+  }
+
+  if (!risk?.sensitiveWords?.length) {
+    warnings.push("未配置敏感词列表，转人工或风险语料只能依赖上游处理。");
+  }
+
+  if (!account.webhookHost) {
+    warnings.push("未显式配置 webhookHost，当前依赖运行时自动探测公网地址。");
+  }
+
+  return warnings;
 }
 
 export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
@@ -176,50 +278,12 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
   agentPrompt: {
     messageToolHints: () => [
       "- YutoAI 微信节点的目标格式：私聊使用 `user:<wcId>`，群聊使用 `group:<chatRoomId>`。",
-      "- 当前支持文本、图片和文件消息。",
+      "- 当前支持文本、图片、视频、文件、语音消息接入，外发媒体会优先按图片发送，其他链接自动回退为文本。",
     ],
   },
 
   configSchema: {
-    schema: {
-      type: "object" as const,
-      additionalProperties: false,
-      properties: {
-        enabled: { type: "boolean" },
-        // 顶级单账号配置
-        apiKey: { type: "string" },
-        proxyUrl: { type: "string" },
-        deviceType: { type: "string", enum: ["ipad", "mac"] },
-        proxy: { type: "string" },
-        webhookHost: { type: "string" },
-        webhookPort: { type: "integer" },
-        webhookPath: { type: "string" },
-        // 多账号配置
-        accounts: {
-          type: "object" as const,
-          additionalProperties: {
-            type: "object" as const,
-            additionalProperties: true,
-            properties: {
-              enabled: { type: "boolean" },
-              name: { type: "string" },
-              apiKey: { type: "string" },
-              proxyUrl: { type: "string" },
-              deviceType: { type: "string", enum: ["ipad", "mac"] },
-              proxy: { type: "string" },
-              webhookHost: { type: "string" },
-              webhookPort: { type: "integer" },
-              webhookPath: { type: "string" },
-              natappEnabled: { type: "boolean" },
-              natapiWebPort: { type: "integer" },
-              wcId: { type: "string" },
-              nickName: { type: "string" },
-            },
-            required: ["apiKey"],
-          },
-        },
-      },
-    },
+    schema: WechatConfigSchema,
   },
 
   config: {
@@ -320,8 +384,8 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
     }),
 
     resolveAllowFrom: ({ cfg, accountId }) => {
-      // 当前节点不使用 allowlist。
-      return [];
+      const account = resolveWeChatAccount({ cfg, accountId });
+      return resolveAllowEntries(account);
     },
 
     formatAllowFrom: ({ allowFrom }) => allowFrom.map(String),
@@ -329,8 +393,8 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
 
   security: {
     collectWarnings: ({ cfg, accountId }) => {
-      // 当前节点没有额外安全告警项。
-      return [];
+      const account = resolveWeChatAccount({ cfg, accountId });
+      return collectSecurityWarnings(account);
     },
   },
 
@@ -640,12 +704,25 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
         await client.sendText(to.id, text);
       }
 
+      if (!looksLikeImageUrl(mediaUrl)) {
+        const fallbackText = [text?.trim(), `媒体链接: ${mediaUrl}`]
+          .filter(Boolean)
+          .join("\n");
+        const result = await client.sendText(to.id, fallbackText);
+        return {
+          channel: "wechat",
+          messageId: String(result.newMsgId),
+          timestamp: result.createTime,
+        };
+      }
+
       // 再发送图片主体。
       const result = await client.sendImage(to.id, mediaUrl);
 
       return {
         channel: "wechat",
         messageId: String(result.newMsgId),
+        timestamp: result.createTime,
       };
     },
   },

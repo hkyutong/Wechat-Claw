@@ -1,7 +1,35 @@
-import type { WechatAccountConfig, WechatConfig } from "./config-schema.js";
+import type {
+  WechatAccountConfig,
+  WechatConfig,
+  WechatChatType,
+  WechatInboundPolicy,
+  WechatMessageType,
+  WechatOperationsPolicy,
+  WechatReplyMode,
+  WechatReplyPolicy,
+  WechatRiskControl,
+  WechatRoutingPolicy,
+  WechatRoutingRule,
+  WechatRuleMatchType,
+  WechatSessionMode,
+} from "./config-schema.js";
 
 // 重新导出配置类型，方便外部统一引用。
-export type { WechatConfig, WechatAccountConfig };
+export type {
+  WechatConfig,
+  WechatAccountConfig,
+  WechatChatType,
+  WechatInboundPolicy,
+  WechatMessageType,
+  WechatOperationsPolicy,
+  WechatReplyMode,
+  WechatReplyPolicy,
+  WechatRiskControl,
+  WechatRoutingPolicy,
+  WechatRoutingRule,
+  WechatRuleMatchType,
+  WechatSessionMode,
+};
 
 export type ResolvedWeChatAccount = {
   accountId: string;

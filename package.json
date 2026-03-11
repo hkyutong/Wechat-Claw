@@ -55,8 +55,10 @@
     "openclaw": ">=2026.2.9"
   },
   "scripts": {
-    "test": "npx tsx test-channel.ts",
+    "test": "npx tsx test-channel.ts && npx tsx test-plugin.ts && npx tsx test-business.ts",
+    "test:channel": "npx tsx test-channel.ts",
     "test:plugin": "npx tsx test-plugin.ts",
+    "test:business": "npx tsx test-business.ts",
     "typecheck": "tsc --noEmit"
   }
 }

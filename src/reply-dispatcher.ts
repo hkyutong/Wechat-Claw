@@ -16,11 +16,12 @@ export type CreateWeChatReplyDispatcherParams = {
   /** 回复投递目标，可为私聊接收方或群聊 ID */
   replyTo: string;
   accountId?: string;
+  textPrefix?: string;
 };
 
 export function createWeChatReplyDispatcher(params: CreateWeChatReplyDispatcherParams) {
   const core = getWeChatRuntime();
-  const { cfg, agentId, runtime, apiKey, proxyUrl, replyTo, accountId } = params;
+  const { cfg, agentId, runtime, apiKey, proxyUrl, replyTo, accountId, textPrefix } = params;
 
   const prefixContext = createReplyPrefixContext({
     cfg,
@@ -54,6 +55,9 @@ export function createWeChatReplyDispatcher(params: CreateWeChatReplyDispatcherP
         }
 
         const chunks = core.channel.text.chunkTextWithMode(text, textChunkLimit, chunkMode);
+        if (textPrefix && chunks.length > 0) {
+          chunks[0] = `${textPrefix}${chunks[0]}`;
+        }
         runtime.log?.(`wechat[${accountId}] 准备向 ${replyTo} 发送 ${chunks.length} 段文本`);
 
         for (const chunk of chunks) {

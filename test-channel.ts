@@ -20,6 +20,33 @@ const mockConfig: ClawdbotConfig = {
           deviceType: "ipad",
           proxy: "2",
           webhookPort: 18790,
+          inbound: {
+            requireMentionInGroup: true,
+            allowSenders: ["wxid_allowed"],
+          },
+          routing: {
+            rules: [
+              {
+                name: "sales-handoff",
+                chatType: "group",
+                matchType: "keyword",
+                pattern: "发包",
+                routeKey: "sales-room",
+                agentId: "agent-sales",
+              },
+            ],
+          },
+          reply: {
+            defaultGroupReplyMode: "group",
+            mentionSenderInGroup: true,
+          },
+          riskControl: {
+            senderRateLimitPerMinute: 3,
+            sensitiveWords: ["退款"],
+          },
+          operations: {
+            enableBuiltinCommands: true,
+          },
           // webhookHost: "你的公网域名或 IP",
         },
       },
@@ -75,6 +102,15 @@ async function testConfig() {
   const description = wechatPlugin.config!.describeAccount!(account);
   assert.equal(description.accountId, "default");
   console.log("   描述:", description);
+
+  // 检查 resolveAllowFrom
+  console.log("\n4. resolveAllowFrom:");
+  const allowFrom = await wechatPlugin.config!.resolveAllowFrom!({
+    cfg: mockConfig,
+    accountId: "default",
+  });
+  assert.deepEqual(allowFrom, ["user:wxid_allowed"]);
+  console.log("   allowFrom:", allowFrom);
 }
 
 // ===== 调试状态模块 =====
@@ -93,6 +129,15 @@ async function testStatus() {
   } catch (err: any) {
     console.log("   错误 (预期内，可能代理服务未启动):", err.message);
   }
+
+  // 检查安全告警
+  console.log("\n2. collectWarnings:");
+  const warnings = await wechatPlugin.security!.collectWarnings!({
+    cfg: mockConfig,
+    accountId: "default",
+  });
+  assert.ok(Array.isArray(warnings));
+  console.log("   告警:", warnings);
 }
 
 // ===== 调试消息目标解析 =====
