@@ -9,6 +9,8 @@ interface CallbackServerOptions {
   abortSignal?: AbortSignal;
 }
 
+const MAX_WEBHOOK_BODY_BYTES = 1024 * 1024;
+
 export async function startCallbackServer(
   options: CallbackServerOptions
 ): Promise<{ port: number; stop: () => void }> {
@@ -19,7 +21,13 @@ export async function startCallbackServer(
     const url = req.url?.split("?")[0] || "";
     if (url === path && req.method === "POST") {
       let body = "";
-      req.on("data", (chunk) => (body += chunk));
+      req.on("data", (chunk) => {
+        body += chunk;
+        if (Buffer.byteLength(body, "utf8") > MAX_WEBHOOK_BODY_BYTES) {
+          res.writeHead(413).end("Payload Too Large");
+          req.destroy();
+        }
+      });
       req.on("end", async () => {
         try {
           const payload = JSON.parse(body);

@@ -116,6 +116,14 @@ function listWeChatAccountIds(cfg: ClawdbotConfig): string[] {
   return Object.keys(accounts).filter((id) => accounts[id]?.enabled !== false);
 }
 
+function filterDirectoryEntries(ids: string[], query: string | undefined, limit: number): string[] {
+  const keyword = query?.trim().toLowerCase();
+  const filtered = keyword
+    ? ids.filter((id) => id.toLowerCase().includes(keyword))
+    : ids;
+  return filtered.slice(0, limit);
+}
+
 export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
   id: "wechat",
 
@@ -367,7 +375,7 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
       });
       const contacts = await client.getContacts(account.wcId!);
 
-      return contacts.friends.slice(0, limit).map((id) => ({
+      return filterDirectoryEntries(contacts.friends, query, limit).map((id) => ({
         id,
         name: id,
         type: "user" as const,
@@ -385,7 +393,7 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
       });
       const contacts = await client.getContacts(account.wcId!);
 
-      return contacts.chatrooms.slice(0, limit).map((id) => ({
+      return filterDirectoryEntries(contacts.chatrooms, query, limit).map((id) => ({
         id,
         name: id,
         type: "group" as const,

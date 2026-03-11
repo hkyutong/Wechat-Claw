@@ -8,7 +8,9 @@
   "files": [
     "index.ts",
     "src",
-    "openclaw.plugin.json"
+    "openclaw.plugin.json",
+    "openclaw-plugin-sdk.d.ts",
+    "README.md"
   ],
   "repository": {
     "type": "git",
