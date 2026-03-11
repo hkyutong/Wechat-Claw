@@ -44,7 +44,7 @@ export type ResolvedWeChatAccount = {
   headUrl?: string;
   deviceType: string;
   proxy: string;
-  webhookHost?: string;    // Webhook 公网地址
+  webhookHost?: string;    // Webhook 公网地址（IP、域名，或完整 https:// 地址）
   webhookPort: number;
   webhookPath: string;     // Webhook 路径
   natappEnabled: boolean;

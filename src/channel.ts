@@ -7,6 +7,7 @@ import { startCallbackServer } from "./callback-server.js";
 import { handleWeChatMessage } from "./bot.js";
 import { displayQRCode, displayLoginSuccess } from "./utils/qrcode.js";
 import { attachWebhookAuthToken, buildWebhookAuthToken } from "./webhook-auth.js";
+import { buildWebhookBaseUrl } from "./webhook-url.js";
 
 // 代理服务地址（必须配置）
 // openclaw config set channels.wechat.proxyUrl "http://你的代理服务:13800"
@@ -156,7 +157,7 @@ function resolveWeChatAccount({
     deviceType: accountCfg.deviceType || "ipad",
     proxy: accountCfg.proxy || "2",
     webhookHost: accountCfg.webhookHost,
-    webhookPort: accountCfg.webhookPort || 18790,
+    webhookPort: accountCfg.webhookPort || 18792,
     webhookPath: accountCfg.webhookPath || "/webhook/wechat",
     natappEnabled: accountCfg.natappEnabled ?? false,
     natapiWebPort: accountCfg.natapiWebPort || 4040,
@@ -629,10 +630,14 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
         }
         webhookHost = localIp;
         log?.warn(`webhookHost 未配置，使用自动检测的 IP: ${localIp}`);
-        log?.warn(`建议配置: openclaw config set channels.wechat.webhookHost "你的公网 IP 或域名"`);
+        log?.warn(`建议配置: openclaw config set channels.wechat.webhookHost "你的公网 IP、域名，或 https://你的域名"`);
       }
 
-      const webhookBaseUrl = `http://${webhookHost}:${port}${account.webhookPath}`;
+      const webhookBaseUrl = buildWebhookBaseUrl({
+        webhookHost,
+        webhookPort: port,
+        webhookPath: account.webhookPath,
+      });
       const webhookAuthToken = buildWebhookAuthToken(account.accountId, account.apiKey);
       const webhookUrl = attachWebhookAuthToken(webhookBaseUrl, webhookAuthToken);
       log?.info(`使用 webhook 地址: ${webhookBaseUrl}`);

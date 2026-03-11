@@ -5,6 +5,7 @@
 
 import assert from "node:assert/strict";
 import { wechatPlugin } from "./src/channel.js";
+import { buildWebhookBaseUrl } from "./src/webhook-url.js";
 import type { ClawdbotConfig } from "openclaw/plugin-sdk";
 
 // ===== 模拟运行时配置 =====
@@ -19,7 +20,8 @@ const mockConfig: ClawdbotConfig = {
           proxyUrl: "http://127.0.0.1:13800",
           deviceType: "ipad",
           proxy: "2",
-          webhookPort: 18790,
+          webhookHost: "https://claw.example.com",
+          webhookPort: 18792,
           inbound: {
             requireMentionInGroup: true,
             allowSenders: ["wxid_allowed"],
@@ -84,6 +86,7 @@ async function testConfig() {
     assert.equal(account.accountId, "default");
     assert.equal(account.proxyUrl, "http://127.0.0.1:13800");
     assert.equal(account.webhookPath, "/webhook/wechat");
+    assert.equal(account.webhookHost, "https://claw.example.com");
     console.log("   账号信息:", {
       accountId: account.accountId,
       enabled: account.enabled,
@@ -91,6 +94,7 @@ async function testConfig() {
       apiKey: account.apiKey.slice(0, 10) + "...",
       deviceType: account.deviceType,
       webhookPort: account.webhookPort,
+      webhookHost: account.webhookHost,
     });
   } catch (err: any) {
     console.log("   错误:", err.message);
@@ -172,6 +176,26 @@ async function testMessaging() {
   }
 }
 
+async function testWebhookUrl() {
+  console.log("\n🌐 验证 Webhook 地址拼装\n");
+
+  const fullUrl = buildWebhookBaseUrl({
+    webhookHost: "https://claw.example.com",
+    webhookPort: 18792,
+    webhookPath: "/webhook/wechat",
+  });
+  assert.equal(fullUrl, "https://claw.example.com/webhook/wechat");
+  console.log("1. 完整 HTTPS 地址 ->", fullUrl);
+
+  const hostAndPort = buildWebhookBaseUrl({
+    webhookHost: "193.134.209.35",
+    webhookPort: 18792,
+    webhookPath: "/webhook/wechat",
+  });
+  assert.equal(hostAndPort, "http://193.134.209.35:18792/webhook/wechat");
+  console.log("2. IP + 端口 ->", hostAndPort);
+}
+
 // ===== 验证网关启动（可选，需要代理服务）=====
 async function testGateway() {
   console.log("\n🚀 验证网关模块\n");
@@ -215,6 +239,12 @@ async function main() {
     await testMessaging();
   } catch (err: any) {
     console.error("消息测试失败:", err.message);
+  }
+
+  try {
+    await testWebhookUrl();
+  } catch (err: any) {
+    console.error("Webhook 地址测试失败:", err.message);
   }
 
   try {

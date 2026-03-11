@@ -85,7 +85,7 @@ export interface WechatAccountConfig extends WechatSharedConfig {
   proxyUrl?: string;       // 代理服务地址
   deviceType?: "ipad" | "mac";
   proxy?: string;          // 网络线路
-  webhookHost?: string;    // Webhook 公网地址（IP 或域名）
+  webhookHost?: string;    // Webhook 公网地址（IP、域名，或完整 https:// 地址）
   webhookPort?: number;
   webhookPath?: string;    // Webhook 路径，默认 /webhook/wechat
   natappEnabled?: boolean;
@@ -103,7 +103,7 @@ export interface WechatConfig extends WechatSharedConfig {
   proxyUrl?: string;
   deviceType?: "ipad" | "mac";
   proxy?: string;
-  webhookHost?: string;    // Webhook 公网地址（IP 或域名）
+  webhookHost?: string;    // Webhook 公网地址（IP、域名，或完整 https:// 地址）
   webhookPort?: number;
   webhookPath?: string;    // Webhook 路径
 

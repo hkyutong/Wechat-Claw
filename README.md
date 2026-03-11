@@ -75,20 +75,21 @@ openclaw plugins install wechat-claw
 
 ### 3. 写入最小配置
 
-把下面 4 行直接替换成你自己的真实值后执行：
+把下面 5 行直接替换成你自己的真实值后执行：
 
 ```bash
 openclaw config set channels.wechat.enabled true
 openclaw config set channels.wechat.apiKey "your-proxy-api-key"
 openclaw config set channels.wechat.proxyUrl "http://your-proxy-service:13800"
-openclaw config set channels.wechat.webhookHost "your-public-host"
+openclaw config set channels.wechat.webhookHost "https://your-domain.example.com"
+openclaw config set channels.wechat.webhookPort 18792
 ```
 
 字段说明：
 
 - `apiKey`: 微信代理服务的 Key，不是 OpenAI、Anthropic 或其他模型 Key
 - `proxyUrl`: 你的微信代理服务地址
-- `webhookHost`: 代理服务能够回调到的公网 IP 或域名
+- `webhookHost`: 代理服务能够回调到的公网 IP、域名，或完整 `https://` 地址
 
 ### 4. 启动网关
 
@@ -112,7 +113,8 @@ docker compose run --rm openclaw-cli plugins install wechat-claw
 docker compose run --rm openclaw-cli config set channels.wechat.enabled true
 docker compose run --rm openclaw-cli config set channels.wechat.apiKey "your-proxy-api-key"
 docker compose run --rm openclaw-cli config set channels.wechat.proxyUrl "http://your-proxy-service:13800"
-docker compose run --rm openclaw-cli config set channels.wechat.webhookHost "your-public-host"
+docker compose run --rm openclaw-cli config set channels.wechat.webhookHost "https://your-domain.example.com"
+docker compose run --rm openclaw-cli config set channels.wechat.webhookPort 18792
 docker compose restart openclaw-gateway
 ```
 
@@ -120,6 +122,7 @@ Docker 场景最容易踩的坑：
 
 - 如果你的 Proxy API 跑在宿主机上，不要在容器里写 `127.0.0.1`，而要写宿主机可访问地址
 - `webhookHost` 必须让 Proxy API 反向访问得到，仅本地回环地址无效
+- 如果你走 Nginx 或云负载均衡，`webhookHost` 直接填完整的 `https://你的域名`
 - 插件安装完成后要重启 `openclaw-gateway`，否则新插件不会被加载
 
 ## 安装
@@ -139,7 +142,8 @@ openclaw plugins update wechat
 ```bash
 openclaw config set channels.wechat.apiKey "your-api-key"
 openclaw config set channels.wechat.proxyUrl "http://your-proxy-service:13800"
-openclaw config set channels.wechat.webhookHost "your-public-host"
+openclaw config set channels.wechat.webhookHost "https://your-domain.example.com"
+openclaw config set channels.wechat.webhookPort 18792
 openclaw config set channels.wechat.enabled true
 ```
 
@@ -151,8 +155,8 @@ channels:
     enabled: true
     apiKey: "your-api-key"
     proxyUrl: "http://127.0.0.1:13800"
-    webhookHost: "1.2.3.4"
-    webhookPort: 18790
+    webhookHost: "https://claw.example.com"
+    webhookPort: 18792
     webhookPath: "/webhook/wechat"
     deviceType: "mac"
     proxy: "2"
@@ -208,14 +212,14 @@ channels:
         enabled: true
         apiKey: "sales-key"
         proxyUrl: "http://127.0.0.1:13800"
-        webhookHost: "1.2.3.4"
-        webhookPort: 18791
+        webhookHost: "https://claw.example.com"
+        webhookPort: 18792
       support:
         enabled: true
         apiKey: "support-key"
         proxyUrl: "http://127.0.0.1:13800"
-        webhookHost: "1.2.3.4"
-        webhookPort: 18792
+        webhookHost: "https://claw.example.com"
+        webhookPort: 18793
 ```
 
 ## 首次登录
