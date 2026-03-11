@@ -22,7 +22,7 @@ export async function getNatappTunnelUrl(
   try {
     const response = await fetch(
       `http://127.0.0.1:${webInterfacePort}/api/tunnels`,
-      { timeout: 5000 }
+      { signal: AbortSignal.timeout(5000) }
     );
 
     if (!response.ok) {
@@ -31,7 +31,7 @@ export async function getNatappTunnelUrl(
 
     const data = (await response.json()) as NatappResponse;
 
-    // 找到 HTTP 隧道
+    // 只取 HTTP 隧道。
     const tunnel = data.tunnels.find((t) => t.proto === "http");
 
     return tunnel?.public_url || null;
@@ -41,7 +41,7 @@ export async function getNatappTunnelUrl(
 }
 
 /**
- * 轮询等待 natapp 启动
+ * 轮询等待 natapp 启动。
  */
 export async function waitForNatappTunnel(
   webInterfacePort: number = 4040,
@@ -70,7 +70,7 @@ export async function waitForNatappTunnel(
 }
 
 /**
- * 获取完整的 webhook URL
+ * 拼接完整的 webhook URL。
  */
 export async function getNatappWebhookUrl(
   webInterfacePort: number = 4040,

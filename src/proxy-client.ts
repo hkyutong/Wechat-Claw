@@ -9,7 +9,7 @@ export class ProxyClient {
     this.apiKey = config.apiKey;
     this.accountId = config.accountId;
     if (!config.baseUrl) {
-      throw new Error("proxyUrl is required. Please configure it in your config.");
+      throw new Error("proxyUrl 必填，请在配置中提供可用的代理地址。");
     }
     this.baseUrl = config.baseUrl;
   }
@@ -35,8 +35,7 @@ export class ProxyClient {
     }
 
     // 代理服务返回格式: { code, message, data }
-    // 转换为插件期望的格式
-    // 1000: success, 1001: delayed (login required), 1002: success with warning
+    // 这里统一折叠成节点内部使用的结果对象。
     if (result.code === "1000" || result.code === "1001" || result.code === "1002") {
       return result.data || result;
     }
@@ -48,7 +47,7 @@ export class ProxyClient {
     return result;
   }
 
-  // ===== Account Status =====
+  // ===== 账号状态 =====
 
   async getStatus(): Promise<{
     valid: boolean;
@@ -73,7 +72,7 @@ export class ProxyClient {
     };
   }
 
-  // ===== Login Flow =====
+  // ===== 登录流程 =====
 
   async getQRCode(deviceType?: string, proxy?: string): Promise<{
     qrCodeUrl: string;
@@ -111,14 +110,13 @@ export class ProxyClient {
     return { status: "waiting" };
   }
 
-  // ===== Message Sending =====
+  // ===== 消息发送 =====
 
   async sendText(wcId: string, content: string): Promise<{
     msgId: number;
     newMsgId: number;
     createTime: number;
   }> {
-    // 直接发送 wcId，代理服务会自动查找对应的 wId
     const result = await this.request("/v1/sendText", {
       wcId,
       content
@@ -136,7 +134,6 @@ export class ProxyClient {
     newMsgId: number;
     createTime: number;
   }> {
-    // 直接发送 wcId，代理服务会自动查找对应的 wId
     const result = await this.request("/v1/sendImage2", {
       wcId,
       imageUrl
@@ -149,13 +146,12 @@ export class ProxyClient {
     };
   }
 
-  // ===== Contacts =====
+  // ===== 联系人 =====
 
   async getContacts(wcId: string): Promise<{
     friends: string[];
     chatrooms: string[];
   }> {
-    // 直接发送 wcId，代理服务会自动查找对应的 wId
     const result = await this.request("/v1/getAddressList", {
       wcId
     });
@@ -169,11 +165,11 @@ export class ProxyClient {
   // ===== Webhook =====
 
   /**
-   * Register plugin webhook URL with Proxy.
-   * Proxy forwards upstream messages to this URL.
+   * 向代理服务注册回调地址。
    */
-  async registerWebhook(webhookUrl: string): Promise<void> {
+  async registerWebhook(wcId: string, webhookUrl: string): Promise<void> {
     await this.request("/v1/webhook/register", {
+      wcId,
       webhookUrl
     });
   }

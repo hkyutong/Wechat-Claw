@@ -1,6 +1,6 @@
 import type { WechatAccountConfig, WechatConfig } from "./config-schema.js";
 
-// Re-export for convenience
+// 重新导出配置类型，方便外部统一引用。
 export type { WechatConfig, WechatAccountConfig };
 
 export type ResolvedWeChatAccount = {

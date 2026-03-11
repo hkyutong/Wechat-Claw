@@ -2,7 +2,7 @@
   "name": "wechat-claw",
   "version": "0.1.0",
   "type": "module",
-  "description": "Wechat-Claw by YutoAI: WeChat gateway plugin via Proxy API",
+  "description": "YutoAI 微信节点：通过 Proxy API 接入微信账号",
   "license": "MIT",
   "author": "YutoAI",
   "files": [
@@ -12,7 +12,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/YutoAI/Wechat-Claw.git"
+    "url": "git+https://github.com/hkyutong/Wechat-Claw.git"
   },
   "keywords": [
     "wechat-claw",
@@ -28,11 +28,11 @@
     ],
     "channel": {
       "id": "wechat",
-      "label": "Wechat-Claw",
-      "selectionLabel": "Wechat-Claw (微信)",
+      "label": "YutoAI WeChat",
+      "selectionLabel": "YutoAI WeChat (微信)",
       "docsPath": "/channels/wechat",
       "docsLabel": "wechat",
-      "blurb": "Wechat-Claw by YutoAI. WeChat channel via Proxy API.",
+      "blurb": "YutoAI 微信节点，通过 Proxy API 接入微信账号。",
       "order": 80
     },
     "install": {

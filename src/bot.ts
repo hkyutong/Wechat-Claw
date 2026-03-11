@@ -3,7 +3,7 @@ import { getWeChatRuntime } from "./runtime.js";
 import { createWeChatReplyDispatcher } from "./reply-dispatcher.js";
 import type { WechatMessageContext, ResolvedWeChatAccount } from "./types.js";
 
-// --- Message deduplication ---
+// 消息去重，避免代理回调或网络抖动造成重复投递。
 const processedMessages = new Map<string, number>();
 const DEDUP_WINDOW_MS = 30 * 60 * 1000; // 30 minutes
 const DEDUP_MAX_SIZE = 1000;
@@ -14,7 +14,7 @@ let lastCleanup = Date.now();
 function tryRecordMessage(messageId: string): boolean {
   const now = Date.now();
 
-  // Periodic cleanup
+  // 定期清理过期去重记录。
   if (now - lastCleanup > DEDUP_CLEANUP_INTERVAL_MS) {
     lastCleanup = now;
     for (const [id, ts] of processedMessages) {
@@ -22,7 +22,7 @@ function tryRecordMessage(messageId: string): boolean {
     }
   }
 
-  // Evict oldest if at capacity
+  // 达到上限时淘汰最早的记录，避免内存持续增长。
   if (processedMessages.size >= DEDUP_MAX_SIZE) {
     const oldest = processedMessages.keys().next().value;
     if (oldest) processedMessages.delete(oldest);
@@ -45,19 +45,19 @@ export async function handleWeChatMessage(params: {
   const log = runtime?.log ?? console.log;
   const error = runtime?.error ?? console.error;
 
-  // Dedup check
+  // 先做去重，避免重复消息进入后续链路。
   if (!tryRecordMessage(message.id)) {
-    log(`wechat: skipping duplicate message ${message.id}`);
+    log(`wechat: 跳过重复消息 ${message.id}`);
     return;
   }
 
   const isGroup = !!message.group;
 
-  log(`wechat[${accountId}]: received ${message.type} from ${message.sender.id}${isGroup ? ` in group ${message.group!.id}` : ""}`);
+  log(`wechat[${accountId}]: 收到 ${message.type} 消息，发送方=${message.sender.id}${isGroup ? `，群=${message.group!.id}` : ""}`);
 
-  // Only handle text messages for now
+  // 当前节点只处理文本消息，其余类型先跳过。
   if (message.type !== "text") {
-    log(`wechat[${accountId}]: ignoring non-text message type: ${message.type}`);
+    log(`wechat[${accountId}]: 暂不处理非文本消息类型 ${message.type}`);
     return;
   }
 
@@ -83,8 +83,8 @@ export async function handleWeChatMessage(params: {
 
     const preview = message.content.replace(/\s+/g, " ").slice(0, 160);
     const inboundLabel = isGroup
-      ? `WeChat[${accountId}] message in group ${message.group!.id}`
-      : `WeChat[${accountId}] DM from ${message.sender.id}`;
+      ? `YutoAI 微信节点[${accountId}] 群消息 ${message.group!.id}`
+      : `YutoAI 微信节点[${accountId}] 私聊消息 ${message.sender.id}`;
 
     core.system.enqueueSystemEvent(`${inboundLabel}: ${preview}`, {
       sessionKey: route.sessionKey,
@@ -93,7 +93,7 @@ export async function handleWeChatMessage(params: {
 
     const envelopeOptions = core.channel.reply.resolveEnvelopeFormatOptions(cfg);
 
-    // Build message body with speaker attribution
+    // 群聊场景下把说话人并入正文，方便下游智能体还原上下文。
     const speaker = message.sender.name || message.sender.id;
     const messageBody = `${speaker}: ${message.content}`;
 
@@ -131,7 +131,7 @@ export async function handleWeChatMessage(params: {
       OriginatingTo: wechatTo,
     });
 
-    // Determine reply target: in groups reply to group, in DMs reply to sender
+    // 群聊回群，私聊回发件人。
     const replyTo = isGroup ? message.group!.id : message.sender.id;
 
     const { dispatcher, replyOptions, markDispatchIdle } = createWeChatReplyDispatcher({
@@ -139,11 +139,12 @@ export async function handleWeChatMessage(params: {
       agentId: route.agentId,
       runtime: runtime as RuntimeEnv,
       apiKey: account.apiKey,
+      proxyUrl: account.proxyUrl,
       replyTo,
       accountId: account.accountId,
     });
 
-    log(`wechat[${accountId}]: dispatching to agent (session=${route.sessionKey})`);
+    log(`wechat[${accountId}]: 开始分发给智能体，session=${route.sessionKey}`);
 
     const { queuedFinal, counts } = await core.channel.reply.dispatchReplyFromConfig({
       ctx: ctxPayload,
@@ -154,8 +155,8 @@ export async function handleWeChatMessage(params: {
 
     markDispatchIdle();
 
-    log(`wechat[${accountId}]: dispatch complete (queuedFinal=${queuedFinal}, replies=${counts.final})`);
+    log(`wechat[${accountId}]: 分发完成，queuedFinal=${queuedFinal}，replies=${counts.final}`);
   } catch (err) {
-    error(`wechat[${accountId}]: failed to dispatch message: ${String(err)}`);
+    error(`wechat[${accountId}]: 分发消息失败: ${String(err)}`);
   }
 }

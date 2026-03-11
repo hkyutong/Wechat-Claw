@@ -5,14 +5,14 @@ import { setWeChatRuntime } from "./src/runtime.js";
 
 const plugin = {
   id: "wechat",
-  name: "Wechat-Claw",
-  description: "Wechat-Claw by YutoAI",
+  name: "YutoAI WeChat",
+  description: "YutoAI 微信节点",
   configSchema: emptyPluginConfigSchema(),
 
   register(api: OpenClawPluginApi) {
     setWeChatRuntime(api.runtime);
     api.registerChannel({ plugin: wechatPlugin });
-    console.log("Wechat-Claw plugin registered");
+    console.log("YutoAI 微信节点已注册");
   },
 };
 

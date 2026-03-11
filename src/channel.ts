@@ -7,15 +7,15 @@ import { handleWeChatMessage } from "./bot.js";
 import { displayQRCode, displayLoginSuccess } from "./utils/qrcode.js";
 
 // 代理服务地址（必须配置）
-// openclaw config set channels.wechat.proxyUrl "http://your-proxy-server:3000"
+// openclaw config set channels.wechat.proxyUrl "http://你的代理服务:13800"
 
 const PLUGIN_META = {
   id: "wechat",
-  label: "Wechat-Claw",
-  selectionLabel: "Wechat-Claw (微信)",
+  label: "YutoAI WeChat",
+  selectionLabel: "YutoAI WeChat (微信)",
   docsPath: "/channels/wechat",
   docsLabel: "wechat",
-  blurb: "Wechat-Claw by YutoAI. WeChat channel via Proxy API.",
+  blurb: "YutoAI 微信节点，通过 Proxy API 接入微信账号。",
   order: 80,
 } as const;
 
@@ -37,7 +37,7 @@ async function resolveWeChatAccount({
   let enabled: boolean;
 
   if (isDefault) {
-    // 简化配置：从顶级字段读取，合并默认账号配置
+    // 顶级单账号配置会与 default 账号配置合并。
     const topLevelConfig: WechatAccountConfig = {
       apiKey: wechatCfg?.apiKey || "",
       proxyUrl: wechatCfg?.proxyUrl,
@@ -48,7 +48,7 @@ async function resolveWeChatAccount({
       webhookPath: wechatCfg?.webhookPath,
     };
 
-    // 合并 accounts.default 配置（如果存在）
+    // 如果存在 accounts.default，则作为默认值补齐。
     const defaultAccount = wechatCfg?.accounts?.default;
     accountCfg = {
       ...topLevelConfig,
@@ -72,7 +72,7 @@ async function resolveWeChatAccount({
   if (!accountCfg?.proxyUrl) {
     throw new Error(
       `缺少 proxyUrl 配置。\n` +
-        `请配置: openclaw config set channels.wechat.proxyUrl "http://your-proxy-server:3000"`
+        `请配置: openclaw config set channels.wechat.proxyUrl "http://你的代理服务:13800"`
     );
   }
 
@@ -104,12 +104,12 @@ async function resolveWeChatAccount({
 function listWeChatAccountIds(cfg: ClawdbotConfig): string[] {
   const wechatCfg = cfg.channels?.wechat as WechatConfig | undefined;
 
-  // 如果有顶级 apiKey，则使用默认账号
+  // 只要顶级 apiKey 存在，就视为单账号模式。
   if (wechatCfg?.apiKey) {
     return [DEFAULT_ACCOUNT_ID];
   }
 
-  // 否则从 accounts 中读取
+  // 否则从 accounts 中读取。
   const accounts = wechatCfg?.accounts;
   if (!accounts) return [];
 
@@ -133,8 +133,8 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
 
   agentPrompt: {
     messageToolHints: () => [
-      "- Wechat-Claw targeting: use `user:<wcId>` for direct messages, `group:<chatRoomId>` for groups.",
-      "- WeChat supports text, image, and file messages.",
+      "- YutoAI 微信节点的目标格式：私聊使用 `user:<wcId>`，群聊使用 `group:<chatRoomId>`。",
+      "- 当前支持文本、图片和文件消息。",
     ],
   },
 
@@ -144,7 +144,7 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
       additionalProperties: false,
       properties: {
         enabled: { type: "boolean" },
-        // 简化配置（顶级字段）
+        // 顶级单账号配置
         apiKey: { type: "string" },
         proxyUrl: { type: "string" },
         deviceType: { type: "string", enum: ["ipad", "mac"] },
@@ -195,7 +195,7 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
       const isDefault = accountId === DEFAULT_ACCOUNT_ID;
 
       if (isDefault) {
-        // 对于默认账号，设置顶级 enabled
+        // 默认账号直接写回顶级 enabled。
         return {
           ...cfg,
           channels: {
@@ -236,7 +236,7 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
       const isDefault = accountId === DEFAULT_ACCOUNT_ID;
 
       if (isDefault) {
-        // 删除整个 wechat 配置
+        // 删除整个 wechat 配置。
         const next = { ...cfg } as ClawdbotConfig;
         const nextChannels = { ...cfg.channels };
         delete (nextChannels as Record<string, unknown>).wechat;
@@ -264,7 +264,7 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
     },
 
     isConfigured: () => {
-      // Always return true - the actual config validation happens in resolveAccount
+      // 实际校验在 resolveAccount 内执行，这里只负责声明可配置。
       return true;
     },
 
@@ -278,7 +278,7 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
     }),
 
     resolveAllowFrom: ({ cfg, accountId }) => {
-      // WeChat doesn't use allowlist in this MVP
+      // 当前节点不使用 allowlist。
       return [];
     },
 
@@ -287,7 +287,7 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
 
   security: {
     collectWarnings: ({ cfg, accountId }) => {
-      // No specific security warnings for MVP
+      // 当前节点没有额外安全告警项。
       return [];
     },
   },
@@ -300,7 +300,7 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
       const isDefault = !accountId || accountId === DEFAULT_ACCOUNT_ID;
 
       if (isDefault) {
-        // 对于默认账号，设置顶级 enabled
+        // 默认账号直接写回顶级 enabled。
         return {
           ...cfg,
           channels: {
@@ -340,13 +340,13 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
       if (target.startsWith("group:")) {
         return { type: "channel", id: target.slice(6) };
       }
-      // Assume direct message if no prefix
+      // 没有前缀时默认按私聊处理。
       return { type: "direct", id: target };
     },
 
     targetResolver: {
       looksLikeId: (id) => {
-        // wcId starts with wxid_ or is a chatroom ID
+        // wxid_ 开头视为私聊 ID，@chatroom 视为群聊 ID。
         return id.startsWith("wxid_") || id.includes("@chatroom");
       },
       hint: "<wxid_xxx|xxxx@chatroom|user:wxid_xxx|group:xxx@chatroom>",
@@ -456,8 +456,8 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
       const { cfg, accountId, abortSignal, setStatus, log } = ctx;
       const account = await resolveWeChatAccount({ cfg, accountId });
 
-      log?.info(`Starting WeChat account: ${accountId}`);
-      log?.info(`Proxy URL: ${account.proxyUrl}`);
+      log?.info(`启动 YutoAI 微信账号: ${accountId}`);
+      log?.info(`代理地址: ${account.proxyUrl}`);
 
       const client = new ProxyClient({
         apiKey: account.apiKey,
@@ -465,16 +465,16 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
         baseUrl: account.proxyUrl,
       });
 
-      // Check current status
+      // 先检查当前登录状态。
       const status = await client.getStatus();
 
       if (!status.valid) {
-        throw new Error(`API Key invalid: ${status.error || "Unknown error"}`);
+        throw new Error(`API Key 无效: ${status.error || "未知错误"}`);
       }
 
-      // If not logged in, perform QR code login
+      // 未登录时走二维码登录流程。
       if (!status.isLoggedIn) {
-        log?.info("Not logged in, starting QR code login flow");
+        log?.info("当前未登录，开始二维码登录流程");
 
         const { qrCodeUrl, wId } = await client.getQRCode(
           account.deviceType,
@@ -483,13 +483,13 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
 
         await displayQRCode(qrCodeUrl);
 
-        // Poll for login status
+        // 轮询登录结果。
         let loggedIn = false;
         let loginResult: { wcId: string; nickName: string; headUrl?: string } | null = null;
 
         for (let i = 0; i < 60; i++) {
           if (abortSignal?.aborted) {
-            throw new Error("Login aborted");
+            throw new Error("登录流程已中止");
           }
 
           await new Promise((r) => setTimeout(r, 5000));
@@ -501,43 +501,43 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
             loginResult = check;
             break;
           } else if (check.status === "need_verify") {
-            log?.warn(`Verification required: ${check.verifyUrl}`);
+            log?.warn(`需要辅助验证: ${check.verifyUrl}`);
             console.log(`\n⚠️  需要辅助验证，请访问: ${check.verifyUrl}\n`);
           }
         }
 
         if (!loggedIn || !loginResult) {
-          throw new Error("Login timeout: QR code expired");
+          throw new Error("登录超时：二维码已过期");
         }
 
         displayLoginSuccess(loginResult.nickName, loginResult.wcId);
 
-        // Note: In real implementation, you'd need to save this config
-        log?.info(`Login successful: ${loginResult.nickName} (${loginResult.wcId})`);
+        // 这里只更新内存态，持久化由外层运行时负责。
+        log?.info(`登录成功: ${loginResult.nickName} (${loginResult.wcId})`);
 
-        // Update local account object
+        // 更新当前账号的内存态。
         account.wcId = loginResult.wcId;
         account.nickName = loginResult.nickName;
         account.isLoggedIn = true;
       } else {
-        log?.info(`Already logged in: ${status.nickName} (${status.wcId})`);
+        log?.info(`已登录: ${status.nickName} (${status.wcId})`);
         account.wcId = status.wcId;
         account.nickName = status.nickName;
         account.isLoggedIn = true;
       }
 
-      // Start webhook server to receive messages
+      // 启动回调服务接收消息。
       const port = account.webhookPort;
       setStatus({ accountId, port, running: true });
 
-      // Determine webhook URL for Proxy to forward messages
+      // 生成代理服务回调地址。
       let webhookHost: string;
 
       if (account.webhookHost) {
-        // 用户配置了公网地址
+        // 优先使用显式配置的公网地址。
         webhookHost = account.webhookHost;
       } else {
-        // 自动检测本机 IP（适用于云服务器）
+        // 云服务器场景下自动探测本机 IPv4。
         const { networkInterfaces } = await import("os");
         const nets = networkInterfaces();
         let localIp = "localhost";
@@ -552,18 +552,19 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
         }
         webhookHost = localIp;
         log?.warn(`webhookHost 未配置，使用自动检测的 IP: ${localIp}`);
-        log?.warn(`建议配置: openclaw config set channels.wechat.webhookHost "your-public-ip"`);
+        log?.warn(`建议配置: openclaw config set channels.wechat.webhookHost "你的公网 IP 或域名"`);
       }
 
       const webhookUrl = `http://${webhookHost}:${port}${account.webhookPath}`;
-      log?.info(`Using webhook URL: ${webhookUrl}`);
+      log?.info(`使用 webhook 地址: ${webhookUrl}`);
 
-      // Register webhook with proxy service
-      log?.info(`Registering webhook with proxy service for wcId: ${account.wcId}`);
+      // 向代理服务注册 webhook。
+      log?.info(`向代理服务注册 webhook，wcId=${account.wcId}`);
       await client.registerWebhook(account.wcId!, webhookUrl);
 
       const { stop } = await startCallbackServer({
         port,
+        path: account.webhookPath,
         apiKey: account.apiKey,
         onMessage: (message) => {
           handleWeChatMessage({
@@ -573,7 +574,7 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
             accountId,
             account,
           }).catch((err) => {
-            log?.error(`Failed to handle WeChat message: ${String(err)}`);
+            log?.error(`处理微信消息失败: ${String(err)}`);
           });
         },
         abortSignal,
@@ -581,10 +582,10 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
 
       abortSignal?.addEventListener("abort", stop);
 
-      log?.info(`WeChat account ${accountId} started successfully on port ${port}`);
-      log?.info(`Webhook URL: ${webhookUrl}`);
+      log?.info(`YutoAI 微信账号 ${accountId} 已启动，监听端口 ${port}`);
+      log?.info(`Webhook 地址: ${webhookUrl}`);
 
-      // Return a cleanup function
+      // 返回停止句柄，供运行时收尾。
       return {
         async stop() {
           stop();
@@ -604,7 +605,7 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
       });
 
       if (!account.wcId) {
-        throw new Error("Not logged in");
+        throw new Error("当前账号尚未登录");
       }
 
       const result = await client.sendText(to.id, text);
@@ -625,15 +626,15 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
       });
 
       if (!account.wcId) {
-        throw new Error("Not logged in");
+        throw new Error("当前账号尚未登录");
       }
 
-      // Send text first if provided
+      // 发送媒体前先补发文字说明。
       if (text?.trim()) {
         await client.sendText(to.id, text);
       }
 
-      // Send image
+      // 再发送图片主体。
       const result = await client.sendImage(to.id, mediaUrl);
 
       return {

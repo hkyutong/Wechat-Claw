@@ -12,14 +12,15 @@ export type CreateWeChatReplyDispatcherParams = {
   agentId: string;
   runtime: RuntimeEnv;
   apiKey: string;
-  /** The wcId to send replies to (sender or group) */
+  proxyUrl: string;
+  /** 回复投递目标，可为私聊接收方或群聊 ID */
   replyTo: string;
   accountId?: string;
 };
 
 export function createWeChatReplyDispatcher(params: CreateWeChatReplyDispatcherParams) {
   const core = getWeChatRuntime();
-  const { cfg, agentId, runtime, apiKey, replyTo, accountId } = params;
+  const { cfg, agentId, runtime, apiKey, proxyUrl, replyTo, accountId } = params;
 
   const prefixContext = createReplyPrefixContext({
     cfg,
@@ -33,7 +34,11 @@ export function createWeChatReplyDispatcher(params: CreateWeChatReplyDispatcherP
   });
   const chunkMode = core.channel.text.resolveChunkMode(cfg, "wechat");
 
-  const client = new ProxyClient({ apiKey, accountId: accountId || "default" });
+  const client = new ProxyClient({
+    apiKey,
+    accountId: accountId || "default",
+    baseUrl: proxyUrl,
+  });
 
   const { dispatcher, replyOptions, markDispatchIdle } =
     core.channel.reply.createReplyDispatcherWithTyping({
@@ -41,28 +46,28 @@ export function createWeChatReplyDispatcher(params: CreateWeChatReplyDispatcherP
       responsePrefixContextProvider: prefixContext.responsePrefixContextProvider,
       humanDelay: core.channel.reply.resolveHumanDelayConfig(cfg, agentId),
       deliver: async (payload: ReplyPayload) => {
-        runtime.log?.(`wechat[${accountId}] deliver called: text=${payload.text?.slice(0, 100)}`);
+        runtime.log?.(`wechat[${accountId}] 开始投递回复: text=${payload.text?.slice(0, 100)}`);
         const text = payload.text ?? "";
         if (!text.trim()) {
-          runtime.log?.(`wechat[${accountId}] deliver: empty text, skipping`);
+          runtime.log?.(`wechat[${accountId}] 回复内容为空，已跳过`);
           return;
         }
 
         const chunks = core.channel.text.chunkTextWithMode(text, textChunkLimit, chunkMode);
-        runtime.log?.(`wechat[${accountId}] deliver: sending ${chunks.length} chunks to ${replyTo}`);
+        runtime.log?.(`wechat[${accountId}] 准备向 ${replyTo} 发送 ${chunks.length} 段文本`);
 
         for (const chunk of chunks) {
           try {
             const result = await client.sendText(replyTo, chunk);
-            runtime.log?.(`wechat[${accountId}] sendText success: msgId=${result.msgId}`);
+            runtime.log?.(`wechat[${accountId}] sendText 成功: msgId=${result.msgId}`);
           } catch (err) {
-            runtime.error?.(`wechat[${accountId}] sendText failed: ${String(err)}`);
+            runtime.error?.(`wechat[${accountId}] sendText 失败: ${String(err)}`);
             throw err;
           }
         }
       },
       onError: (err, info) => {
-        runtime.error?.(`wechat[${accountId}] ${info.kind} reply failed: ${String(err)}`);
+        runtime.error?.(`wechat[${accountId}] ${info.kind} 回复失败: ${String(err)}`);
       },
     });
 

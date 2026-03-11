@@ -1,7 +1,6 @@
 /**
- * Configuration types for WeChat channel
- * 支持简化配置（顶级字段）和多账号配置（accounts）
- * Note: runtime validation can be applied externally
+ * YutoAI 微信节点配置类型。
+ * 同时支持顶级单账号配置和 accounts 多账号配置。
  */
 
 export interface WechatAccountConfig {
@@ -37,7 +36,7 @@ export interface WechatConfig {
   accounts?: Record<string, WechatAccountConfig | undefined>;
 }
 
-// Schema object for runtime config validation
+// 运行时配置校验对象。
 export const WechatConfigSchema = {
   type: "object" as const,
   additionalProperties: false,

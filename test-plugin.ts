@@ -1,20 +1,21 @@
 /**
- * 插件本地测试脚本 - 不依赖外部运行时
+ * YutoAI 微信节点调试脚本。
+ * 建议只在服务器环境运行，不在本地落任何构建产物。
  */
 
 import { ProxyClient } from "./src/proxy-client.js";
 import { startCallbackServer } from "./src/callback-server.js";
 
-// ===== 测试配置 =====
+// ===== 调试配置 =====
 const TEST_CONFIG = {
   apiKey: "test_api_key_xxx",
   accountId: "default",
-  proxyUrl: "http://localhost:3000/v1", // 你的代理服务地址
+  proxyUrl: "http://localhost:13800/v1", // 你的代理服务地址
 };
 
-// ===== 测试 1: ProxyClient =====
+// ===== 调试 1: ProxyClient =====
 async function testProxyClient() {
-  console.log("\n🧪 测试 ProxyClient...");
+  console.log("\n🧪 调试 ProxyClient...");
 
   const client = new ProxyClient({
     apiKey: TEST_CONFIG.apiKey,
@@ -23,27 +24,27 @@ async function testProxyClient() {
   });
 
   try {
-    // 测试获取状态
-    console.log("  - 测试 getStatus()");
+    // 检查账号状态
+    console.log("  - 调试 getStatus()");
     const status = await client.getStatus();
     console.log("  ✓ Status:", status);
   } catch (err: any) {
-    console.log("  ✗ getStatus 失败:", err.message);
+    console.log("  ✗ getStatus 调试失败:", err.message);
   }
 
   try {
-    // 测试获取二维码
-    console.log("  - 测试 getQRCode()");
+    // 检查二维码拉取
+    console.log("  - 调试 getQRCode()");
     const qr = await client.getQRCode("ipad", "2");
     console.log("  ✓ QRCode:", qr);
   } catch (err: any) {
-    console.log("  ✗ getQRCode 失败:", err.message);
+    console.log("  ✗ getQRCode 调试失败:", err.message);
   }
 }
 
-// ===== 测试 2: Callback Server =====
+// ===== 调试 2: 回调服务 =====
 async function testCallbackServer() {
-  console.log("\n🧪 测试 CallbackServer...");
+  console.log("\n🧪 调试 CallbackServer...");
 
   try {
     const { port, stop } = await startCallbackServer({
@@ -56,7 +57,7 @@ async function testCallbackServer() {
 
     console.log(`  ✓ 服务器启动在端口 ${port}`);
 
-    // 5秒后停止
+    // 5 秒后自动停止
     setTimeout(() => {
       stop();
       console.log("  ✓ 服务器已停止");
@@ -66,11 +67,11 @@ async function testCallbackServer() {
   }
 }
 
-// ===== 测试 3: 模拟消息接收 =====
+// ===== 调试 3: 模拟消息接收 =====
 async function testWebhookReceive() {
-  console.log("\n🧪 测试 Webhook 接收...");
+  console.log("\n🧪 调试 Webhook 接收...");
 
-  // 模拟发送一个 webhook 请求到本地服务器
+  // 模拟发送一个 webhook 请求到本地服务
   const testPayload = {
     messageType: "60001",
     wcId: "wxid_test123",
@@ -96,23 +97,23 @@ async function testWebhookReceive() {
   }
 }
 
-// ===== 主测试流程 =====
+// ===== 主调试流程 =====
 async function main() {
-  console.log("🚀 开始 Wechat-Claw 本地测试\n");
+  console.log("🚀 开始 YutoAI 微信节点服务器调试\n");
 
-  // 测试 ProxyClient
+  // 调试 ProxyClient
   await testProxyClient();
 
-  // 测试 CallbackServer
+  // 调试回调服务
   await testCallbackServer();
 
-  // 等待服务器启动
+  // 等待回调服务启动
   await new Promise((r) => setTimeout(r, 1000));
 
-  // 测试 Webhook 接收
+  // 调试 Webhook 接收
   await testWebhookReceive();
 
-  console.log("\n✅ 测试完成");
+  console.log("\n✅ 调试完成");
   process.exit(0);
 }
 

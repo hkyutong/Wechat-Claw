@@ -1,7 +1,6 @@
 /**
- * Simple QR code display without external dependencies
- * For production use with actual QR codes, install qrcode-terminal:
- *   npm install qrcode-terminal
+ * YutoAI 微信节点的轻量二维码输出。
+ * 这里不依赖额外终端库，只输出扫码链接。
  */
 
 export async function displayQRCode(url: string): Promise<void> {

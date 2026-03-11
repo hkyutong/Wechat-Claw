@@ -3,7 +3,16 @@
   "channels": ["wechat"],
   "configSchema": {
     "type": "object",
+    "additionalProperties": false,
     "properties": {
+      "enabled": { "type": "boolean" },
+      "apiKey": { "type": "string" },
+      "proxyUrl": { "type": "string" },
+      "deviceType": { "type": "string", "enum": ["ipad", "mac"] },
+      "proxy": { "type": "string" },
+      "webhookHost": { "type": "string" },
+      "webhookPort": { "type": "integer" },
+      "webhookPath": { "type": "string" },
       "accounts": {
         "type": "object",
         "additionalProperties": {
@@ -13,10 +22,12 @@
             "enabled": { "type": "boolean" },
             "name": { "type": "string" },
             "apiKey": { "type": "string" },
+            "proxyUrl": { "type": "string" },
             "deviceType": { "type": "string", "enum": ["ipad", "mac"] },
             "proxy": { "type": "string" },
+            "webhookHost": { "type": "string" },
             "webhookPort": { "type": "integer" },
-            "webhookUrl": { "type": "string" },
+            "webhookPath": { "type": "string" },
             "natappEnabled": { "type": "boolean" },
             "natapiWebPort": { "type": "integer" },
             "wcId": { "type": "string" },
@@ -27,6 +38,6 @@
       }
     }
   },
-  "displayName": "Wechat-Claw",
-  "description": "Wechat-Claw by YutoAI"
+  "displayName": "YutoAI WeChat",
+  "description": "YutoAI 微信节点"
 }
