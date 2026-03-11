@@ -81,8 +81,8 @@ export async function handleWeChatMessage(params: {
     const replyMode = resolveReplyMode({ account, message, evaluation });
     const preview = evaluation.agentBody.replace(/\s+/g, " ").slice(0, 160);
     const inboundLabel = isGroup
-      ? `YutoAI 微信节点[${accountId}] 群消息 ${message.group!.id}`
-      : `YutoAI 微信节点[${accountId}] 私聊消息 ${message.sender.id}`;
+      ? `OpenClaw 微信通道[${accountId}] 群消息 ${message.group!.id}`
+      : `OpenClaw 微信通道[${accountId}] 私聊消息 ${message.sender.id}`;
 
     core.system?.enqueueSystemEvent?.(`${inboundLabel}: ${preview}`, {
       sessionKey,

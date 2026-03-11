@@ -1,5 +1,5 @@
 /**
- * YutoAI 微信节点插件验证脚本。
+ * OpenClaw 微信通道插件验证脚本。
  * 用于验证 Webhook 回调与鉴权逻辑。
  */
 
@@ -25,9 +25,9 @@ let receivedMessage: WechatMessageContext | null = null;
 
 function testPluginMetadata() {
   console.log("\n🧪 验证插件元数据...");
-  assert.equal(plugin.id, "wechat-claw", "插件 id 应与包身份一致");
-  assert.equal(plugin.name, "YutoAI WeChat");
-  console.log("  ✓ 插件 id 与公开包名对齐");
+  assert.equal(plugin.id, "wechat", "插件 id 应与 OpenClaw 通道标识一致");
+  assert.equal(plugin.name, "OpenClaw WeChat");
+  console.log("  ✓ 插件 id 与 OpenClaw 运行时标识对齐");
 }
 
 // ===== 验证 1: ProxyClient =====
@@ -132,7 +132,7 @@ async function testWebhookReceive() {
 
 // ===== 主验证流程 =====
 async function main() {
-  console.log("🚀 开始 YutoAI 微信节点插件验证\n");
+  console.log("🚀 开始 OpenClaw 微信通道插件验证\n");
 
   testPluginMetadata();
 

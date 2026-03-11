@@ -1,10 +1,10 @@
 # 贡献指南
 
-感谢你愿意改进 `wechat-claw`。
+感谢你愿意改进 `OpenClaw WeChat`。
 
 ## 开始之前
 
-- Node.js 请使用 `20` 或更高版本
+- Node.js 请使用 `22` 或更高版本
 - 安装依赖使用 `npm ci`
 - 提交前请确保 `npm run verify` 通过
 

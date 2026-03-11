@@ -1,5 +1,5 @@
 {
-  "id": "wechat-claw",
+  "id": "wechat",
   "channels": ["wechat"],
   "configSchema": {
     "type": "object",
@@ -62,6 +62,6 @@
       }
     }
   },
-  "displayName": "YutoAI WeChat",
-  "description": "YutoAI 微信节点"
+  "displayName": "OpenClaw WeChat",
+  "description": "OpenClaw 微信通道插件"
 }

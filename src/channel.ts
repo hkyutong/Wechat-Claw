@@ -14,11 +14,11 @@ import { buildWebhookBaseUrl } from "./webhook-url.js";
 
 const PLUGIN_META = {
   id: "wechat",
-  label: "YutoAI WeChat",
-  selectionLabel: "YutoAI WeChat (微信)",
+  label: "OpenClaw WeChat",
+  selectionLabel: "OpenClaw WeChat (微信)",
   docsPath: "/channels/wechat",
   docsLabel: "wechat",
-  blurb: "YutoAI 微信节点，通过 Proxy API 接入微信账号。",
+  blurb: "OpenClaw 微信通道插件，通过 Proxy API 接入微信账号。",
   order: 80,
 } as const;
 
@@ -353,7 +353,7 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
 
   agentPrompt: {
     messageToolHints: () => [
-      "- YutoAI 微信节点的目标格式：私聊使用 `user:<wcId>`，群聊使用 `group:<chatRoomId>`。",
+      "- OpenClaw 微信通道的目标格式：私聊使用 `user:<wcId>`，群聊使用 `group:<chatRoomId>`。",
       "- 当前支持文本、图片、视频、文件、语音消息接入，外发媒体会优先按图片发送，其他链接自动回退为文本。",
     ],
   },
@@ -617,7 +617,7 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
       const { cfg, accountId, abortSignal, setStatus, log } = ctx;
       const account = await resolveWeChatAccount({ cfg, accountId });
 
-      log?.info(`启动 YutoAI 微信账号: ${accountId}`);
+      log?.info(`启动 OpenClaw 微信账号: ${accountId}`);
       log?.info(`后端提供方: ${account.provider}`);
       log?.info(`代理地址: ${account.proxyUrl}`);
 
@@ -748,7 +748,7 @@ export const wechatPlugin: ChannelPlugin<ResolvedWeChatAccount> = {
         abortSignal,
       });
 
-      log?.info(`YutoAI 微信账号 ${accountId} 已启动，监听端口 ${port}`);
+      log?.info(`OpenClaw 微信账号 ${accountId} 已启动，监听端口 ${port}`);
       log?.info(`Webhook 地址: ${webhookBaseUrl}`);
 
       // 返回停止句柄，供运行时收尾。

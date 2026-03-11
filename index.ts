@@ -4,15 +4,15 @@ import { wechatPlugin } from "./src/channel.js";
 import { setWeChatRuntime } from "./src/runtime.js";
 
 const plugin = {
-  id: "wechat-claw",
-  name: "YutoAI WeChat",
-  description: "YutoAI 微信节点",
+  id: "wechat",
+  name: "OpenClaw WeChat",
+  description: "OpenClaw 微信通道插件",
   configSchema: emptyPluginConfigSchema(),
 
   register(api: OpenClawPluginApi) {
     setWeChatRuntime(api.runtime);
     api.registerChannel({ plugin: wechatPlugin });
-    console.log("YutoAI 微信节点已注册");
+    console.log("OpenClaw 微信通道已注册");
   },
 };
 

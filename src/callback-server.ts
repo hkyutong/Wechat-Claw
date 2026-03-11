@@ -84,7 +84,7 @@ export async function startCallbackServer(
 
   return new Promise((resolve, reject) => {
     server.listen(port, "0.0.0.0", () => {
-      console.log(`📡 YutoAI 微信回调服务监听于 0.0.0.0:${port}`);
+      console.log(`📡 OpenClaw 微信回调服务监听于 0.0.0.0:${port}`);
       console.log(`   回调地址: http://localhost:${port}${path}`);
 
       let stopped = false;
@@ -92,7 +92,7 @@ export async function startCallbackServer(
         if (stopped) return;
         stopped = true;
         server.close(() => {
-          console.log(`📡 YutoAI 微信回调服务已停止，端口 ${port}`);
+          console.log(`📡 OpenClaw 微信回调服务已停止，端口 ${port}`);
         });
       };
 

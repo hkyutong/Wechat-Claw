@@ -273,7 +273,7 @@ export function resolveBuiltinCommandAction(params: {
     const groupReplyMode = account.config.reply?.defaultGroupReplyMode ?? "group";
     return {
       replyText: [
-        "YutoAI 微信节点状态",
+        "OpenClaw 微信通道状态",
         `账号: ${account.name || account.nickName || account.accountId}`,
         `微信ID: ${account.wcId || "未登录"}`,
         `群内需@触发: ${requireMention}`,
@@ -293,7 +293,7 @@ export function resolveBuiltinCommandAction(params: {
 
     return {
       replyText: [
-        "YutoAI 微信节点命令",
+        "OpenClaw 微信通道命令",
         `命令前缀: ${prefixes}`,
         "内建命令: ping, status, help",
         `群内需@触发: ${account.config.inbound?.requireMentionInGroup ? "是" : "否"}`,

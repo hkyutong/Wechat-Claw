@@ -139,7 +139,7 @@ async function testBuiltinHelpCommand() {
     runtime,
     message: buildGroupMessage({
       id: "msg-help",
-      content: "@YutoAI /help",
+      content: "@OpenClaw /help",
     }),
   });
 
@@ -148,7 +148,7 @@ async function testBuiltinHelpCommand() {
   assert.equal(sentRequests[0].endpoint, "/v1/sendText");
   assert.equal(sentRequests[0].body.wcId, "room@chatroom");
   assert.match(sentRequests[0].body.content, /^@Alice /, "群内 help 回复应带 @ 发送者前缀");
-  assert.match(sentRequests[0].body.content, /YutoAI 微信节点命令/);
+  assert.match(sentRequests[0].body.content, /OpenClaw 微信通道命令/);
 }
 
 async function testRoutingRuleAndDirectReplyMode() {
@@ -184,7 +184,7 @@ async function testRoutingRuleAndDirectReplyMode() {
     runtime,
     message: buildGroupMessage({
       id: "msg-sales",
-      content: "@YutoAI 请发包",
+      content: "@OpenClaw 请发包",
     }),
   });
 
@@ -239,7 +239,7 @@ async function testImageIngressFormatting() {
       content: "这是报价图",
       raw: {
         data: {
-          imageUrl: "https://cdn.yutoai.com/quote.png",
+          imageUrl: "https://cdn.example.com/quote.png",
           fileName: "quote.png",
         },
       },
@@ -249,13 +249,13 @@ async function testImageIngressFormatting() {
   assert.equal(dispatchedContexts.length, 1, "图片消息应进入智能体链路");
   assert.match(dispatchedContexts[0].Body, /\[图片消息\]/);
   assert.match(dispatchedContexts[0].Body, /quote\.png/);
-  assert.match(dispatchedContexts[0].Body, /https:\/\/cdn\.yutoai\.com\/quote\.png/);
+  assert.match(dispatchedContexts[0].Body, /https:\/\/cdn\.example\.com\/quote\.png/);
   assert.equal(sentRequests.length, 1, "图片消息的智能体回复应正常发回");
 }
 
 async function main() {
   console.log("=".repeat(60));
-  console.log("🧪 YutoAI 微信节点业务规则测试");
+  console.log("🧪 OpenClaw 微信通道业务规则测试");
   console.log("=".repeat(60));
 
   try {
@@ -293,13 +293,13 @@ function buildAccount(overrides?: Partial<ResolvedWeChatAccount["config"]>): Res
     accountId: "default",
     enabled: true,
     configured: true,
-    name: "YutoAI",
+    name: "OpenClaw",
     provider: "legacy",
     apiKey: "wc_live_test",
     proxyUrl: "http://127.0.0.1:13800",
-    wcId: "wxid_yutoai",
+    wcId: "wxid_openclaw",
     isLoggedIn: true,
-    nickName: "YutoAI",
+    nickName: "OpenClaw",
     deviceType: "ipad",
     proxy: "2",
     webhookPort: 18790,
@@ -325,7 +325,7 @@ function buildDirectMessage(overrides?: Partial<WechatMessageContext>): WechatMe
       name: "Alice",
     },
     recipient: {
-      id: "wxid_yutoai",
+      id: "wxid_openclaw",
     },
     content: "你好",
     timestamp: Date.now(),
@@ -339,14 +339,14 @@ function buildGroupMessage(overrides?: Partial<WechatMessageContext>): WechatMes
   return {
     ...buildDirectMessage(),
     id: "msg-group",
-    content: "@YutoAI 你好",
+    content: "@OpenClaw 你好",
     threadId: "room@chatroom",
     group: {
       id: "room@chatroom",
-      name: "YutoAI 客服群",
+      name: "OpenClaw 客服群",
     },
     raw: {
-      atUsers: ["wxid_yutoai"],
+      atUsers: ["wxid_openclaw"],
     },
     ...overrides,
   };

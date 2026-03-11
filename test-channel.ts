@@ -1,5 +1,5 @@
 /**
- * YutoAI 微信节点的兼容运行时验证脚本。
+ * OpenClaw 微信通道的兼容运行时验证脚本。
  * 适合作为本地开发和 CI 的 smoke test。
  */
 
@@ -250,7 +250,7 @@ async function testOutbound() {
 // ===== 主验证流程 =====
 async function main() {
   console.log("=".repeat(60));
-  console.log("🧪 YutoAI 微信节点通道验证");
+  console.log("🧪 OpenClaw 微信通道验证");
   console.log("=".repeat(60));
 
   try {
