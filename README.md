@@ -41,10 +41,86 @@
 
 ## 环境要求
 
-- Node.js `>= 20`
+- Node.js `>= 22`
 - `OpenClaw >= 2026.2.9`
 - 可用的微信 Proxy API 服务
 - 能被代理服务访问到的 Webhook 地址
+
+## 先搞清楚这 3 个组件
+
+- `OpenClaw`: 宿主网关，负责加载插件、维护会话、调用模型
+- `wechat-claw`: 本仓库，负责把微信消息接进 `OpenClaw`
+- `Proxy API`: 负责微信登录、收消息、发消息；README 里的 `apiKey` 是它的凭证，不是模型厂商的 Key
+
+如果你还没跑过 `OpenClaw`，最省事的做法是先把 `OpenClaw` 跑起来，再安装本插件。
+
+## 5 分钟上手
+
+这条路径最适合第一次接触 `OpenClaw` 的用户。
+
+### 1. 安装 OpenClaw
+
+```bash
+npm install -g openclaw@latest
+openclaw onboard --install-daemon
+```
+
+如果执行完后提示找不到 `openclaw` 命令，重新打开终端再试一次。
+
+### 2. 安装微信插件
+
+```bash
+openclaw plugins install wechat-claw
+```
+
+### 3. 写入最小配置
+
+把下面 4 行直接替换成你自己的真实值后执行：
+
+```bash
+openclaw config set channels.wechat.enabled true
+openclaw config set channels.wechat.apiKey "your-proxy-api-key"
+openclaw config set channels.wechat.proxyUrl "http://your-proxy-service:13800"
+openclaw config set channels.wechat.webhookHost "your-public-host"
+```
+
+字段说明：
+
+- `apiKey`: 微信代理服务的 Key，不是 OpenAI、Anthropic 或其他模型 Key
+- `proxyUrl`: 你的微信代理服务地址
+- `webhookHost`: 代理服务能够回调到的公网 IP 或域名
+
+### 4. 启动网关
+
+```bash
+openclaw gateway start --verbose
+```
+
+首次启动时，你会看到二维码或扫码链接。扫码成功后，再用微信给机器人发一条 `/status`；只要能正常回复，说明接入已经打通。
+
+## Docker 部署
+
+如果你希望把 `OpenClaw` 也跑在 Docker 里，推荐先按官方 Docker 指南准备运行环境：
+
+- 官方 Docker 文档：[OpenClaw Docker](https://docs.openclaw.ai/install/docker)
+- 官方快速开始：[Getting started](https://docs.openclaw.ai/start/getting-started)
+
+准备好 `OpenClaw` 的 Docker 环境后，再执行下面这些命令安装和配置本插件：
+
+```bash
+docker compose run --rm openclaw-cli plugins install wechat-claw
+docker compose run --rm openclaw-cli config set channels.wechat.enabled true
+docker compose run --rm openclaw-cli config set channels.wechat.apiKey "your-proxy-api-key"
+docker compose run --rm openclaw-cli config set channels.wechat.proxyUrl "http://your-proxy-service:13800"
+docker compose run --rm openclaw-cli config set channels.wechat.webhookHost "your-public-host"
+docker compose restart openclaw-gateway
+```
+
+Docker 场景最容易踩的坑：
+
+- 如果你的 Proxy API 跑在宿主机上，不要在容器里写 `127.0.0.1`，而要写宿主机可访问地址
+- `webhookHost` 必须让 Proxy API 反向访问得到，仅本地回环地址无效
+- 插件安装完成后要重启 `openclaw-gateway`，否则新插件不会被加载
 
 ## 安装
 
@@ -150,6 +226,14 @@ openclaw gateway start
 
 首次启动会输出二维码或扫码链接。完成扫码后，节点会自动轮询登录状态并向代理服务注册回调地址。
 
+## 最小验收清单
+
+- 启动 `openclaw gateway start --verbose` 后，没有出现插件加载报错
+- 日志中能看到二维码或扫码链接
+- 扫码登录后，日志中能看到登录状态变化和 Webhook 注册信息
+- 用微信发 `/status`，机器人能正常回复
+- 在群里开启 `requireMentionInGroup: true` 后，不 `@` 机器人时它不会乱回
+
 ## 配置说明
 
 ### `inbound`
@@ -239,6 +323,13 @@ docker run --rm -v "$(pwd):/app" -w /app node:22-bullseye \
 - 当前稳定的出站能力是文本和图片；其他媒体类型会回退成文本链接，避免因为代理侧实现差异导致发送失败
 - 登录态目前依赖代理服务返回和运行时配置，不包含独立持久化存储
 - 规则中的 `auditTag` 当前只写入上下文，不负责外部审计系统落库
+
+## 常见问题
+
+- `apiKey` 是什么：它是微信 Proxy API 的凭证，不是模型服务的 API Key
+- 为什么扫完码没反应：优先检查 `proxyUrl` 是否可用、`webhookHost` 是否能被代理服务回调
+- 为什么 Docker 里连不上代理：容器内的 `127.0.0.1` 指向容器自己，不是宿主机
+- 为什么插件装好了但没生效：重启 `openclaw-gateway`，然后看日志里是否出现 `YutoAI 微信节点已注册`
 
 ## 贡献
 
